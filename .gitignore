@@ -1,0 +1,46 @@
+# Bytecode Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ambientes virtuais
+.seger-ws/
+.venv/
+env/
+venv/
+ENV/
+
+# Arquivos de configuração/editor
+*.vscode/
+*.idea/
+*.swp
+
+# Arquivos de log
+*.log
+
+# Arquivos temporários
+*.tmp
+*.bak
+*.orig
+*.db
+.DS_Store
+
+# Variáveis de ambiente
+.env
+.env.*
+
+# Playwright downloads temporários
+playwright-report/
+test-results/
+*.zip
+
+# PDFs e faturas baixadas (opcional: mantenha no repositório se necessário)
+faturas_edp/
+
+# Pipenv, Poetry ou outras dependências específicas
+Pipfile.lock
+poetry.lock
+
+# Windows
+Thumbs.db
+ehthumbs.db
