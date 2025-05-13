@@ -40,7 +40,6 @@ def ref_to_date(ref):
         return datetime.min
 
 
-
 def reload_faturas(page):
     page.goto("https://www.edponline.com.br/servicos/consulta-debitos", wait_until="load")
     ver_mais = page.locator('button:has-text("Ver mais faturas")')
@@ -63,7 +62,7 @@ def baixar_faturas_por_instalacao(INSTALACOES, data_inicio, data_fim):
     dt_fim = ref_to_date(data_fim)
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
+        browser = p.chromium.launch(headless=True)
         context = browser.new_context(accept_downloads=True)
         page = context.new_page()
 
@@ -91,26 +90,6 @@ def baixar_faturas_por_instalacao(INSTALACOES, data_inicio, data_fim):
             pasta_instalacao = os.path.join(BASE_DIR, numero)
             os.makedirs(pasta_instalacao, exist_ok=True)
 
-            # # Consulta débitos
-            # page.goto("https://www.edponline.com.br/servicos/consulta-debitos", wait_until="load")
-            # page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            # page.fill('input[name="Instalacao"]', numero)
-            # page.click('button:has-text("Avançar")')
-            # page.locator(f'a.instalacao:has-text("{numero}")').click()
-           
-            # ver_mais = page.locator('button:has-text("Ver mais faturas")')
-            # ver_mais.wait_for(state="visible", timeout=30000)
-            # # Ver mais faturas
-            # for _ in range(11):
-            #     try:
-            #         ver_mais = page.locator('button:has-text("Ver mais faturas")')
-            #         if ver_mais.is_visible():
-            #             ver_mais.click()
-            #             page.wait_for_timeout(1000)
-            #         else:
-            #             break
-            #     except:
-            #         break
             max_tentativas = 3
             tentativa = 0
             sucesso = False
