@@ -1,0 +1,5 @@
+irm "http://localhost:5000/api/seger/faturas" -Method POST -ContentType "application/json" -Body '{"instalacoes":["9502682"],"data_inicio":"MAR-2025","data_fim":"JAN-2025"}'
+
+irm "http://localhost:5000/api/seger/dados-fatura" -Method POST -ContentType "application/json" -Body '{"pdf_path":"D:/Github Projects/seger-ws/faturas_edp/9502682/fatura_2_MAR-2025.pdf"}'
+
+irm "http://localhost:5000/api/seger/dados-fatura/teste" -Method POST -ContentType "application/json" -Body '{"pdf_path":"D:/Github Projects/seger-ws/faturas_edp/9502682/fatura_2_MAR-2025.pdf"}'
