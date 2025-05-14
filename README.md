@@ -1,6 +1,6 @@
-# ⚡ Seger-WS: Web Scraper de Faturas EDP
+# ⚡ Seger-WS: Web Scraper de Faturas EDP (Flask Version with MCP Server)
 
-Projeto automatizado com Playwright para realizar login, navegação e download de faturas em PDF do portal [EDP Online](https://www.edponline.com.br). Ideal para automação de relatórios de consumo ou integração com sistemas de gestão energética.
+Projeto automatizado para realizar login, navegação e download de faturas em PDF do portal [EDP Online](https://www.edponline.com.br). Esta versão foi migrada para Flask e inclui um MCP (Model Context Protocol) server para gerenciamento e extensão de funcionalidades. Ideal para automação de relatórios de consumo ou integração com sistemas de gestão energética.
 
 ---
 
@@ -15,14 +15,16 @@ Projeto automatizado com Playwright para realizar login, navegação e download 
   - Erros no carregamento de faturas.
   - Timeout ou lentidão do site.
 - Organização de faturas em subpastas: `faturas_edp/<número_instalação>/`.
+- **MCP Server Integration:** Extends functionality and allows for remote management and monitoring.
 
 ---
 
 ## 🚀 Requisitos
 
 - Python 3.9+
-- Node.js (para dependências do Playwright)
+- Node.js (para dependências do Playwright e MCP server)
 - [Playwright para Python](https://playwright.dev/python/)
+- Flask
 - Conta EDP com acesso válido (e-mail e senha)
 
 ---
@@ -38,11 +40,16 @@ cd seger-ws
 python -m venv .venv
 source .venv/bin/activate  # ou .\.venv\Scripts\activate no Windows
 
-# Instale dependências
+# Instale dependências Python
 pip install -r requirements.txt
 
 # Instale os navegadores do Playwright
 playwright install
+
+# Instale dependências Node.js para o MCP server
+cd mcp-server
+npm install
+cd ..
 ```
 
 ---
@@ -66,6 +73,14 @@ Execute o script principal com os argumentos:
 python app.py <lista_instalacoes> <MES_INICIO> <MES_FIM>
 ```
 
+To start the MCP server:
+
+```bash
+cd mcp-server
+npm run start
+cd ..
+```
+
 ### Exemplo:
 
 ```bash
@@ -73,6 +88,12 @@ python app.py 1234567890,0987654321 JAN-2024 ABR-2025
 ```
 
 > Isso irá baixar as faturas de **janeiro de 2024 até abril de 2025** para as instalações informadas.
+
+---
+
+## ⚙️ MCP Server
+
+The MCP server provides additional tools and resources for managing and monitoring the application. It can be accessed via its API.
 
 ---
 
