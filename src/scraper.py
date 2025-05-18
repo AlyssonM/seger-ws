@@ -27,7 +27,7 @@ def ref_to_date(ref: str) -> datetime:
 
 def reload_faturas(page) -> None:
     page.goto("https://www.edponline.com.br/servicos/consulta-debitos", wait_until="load")
-    for _ in range(11):
+    for _ in range(20):
         try:
             btn = page.locator('button:has-text("Ver mais faturas")')
             if btn.is_visible():
@@ -107,7 +107,7 @@ def baixar_faturas_por_instalacao(instalacoes: list[str], data_inicio: str, data
             ver_mais = page.locator('button:has-text("Ver mais faturas")')
             ver_mais.wait_for(state="visible", timeout=30000)
             # Ver mais faturas
-            for _ in range(11):
+            for _ in range(20):
                 try:
                     ver_mais = page.locator('button:has-text("Ver mais faturas")')
                     if ver_mais.is_visible():
