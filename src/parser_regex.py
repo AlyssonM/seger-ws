@@ -59,16 +59,18 @@ def extrair_dados_completos_da_fatura_regex(texto: str) -> Dict[str, Any]:
         r"(AV|RUA|RODOVIA|ESTRADA)[^\n]*\n[^\n]*\n(?:CEP[:\s]*)?\d{5}-\d{3}", texto, flags=re.IGNORECASE
     )
 
-    if len(endereco_matches) >= 2:
+    if endereco_matches:
         bloco = re.findall(
             r"((AV|RUA|RODOVIA|ESTRADA)[^\n]*\n[^\n]*\n(?:CEP[:\s]*)?\d{5}-\d{3})",
             texto, flags=re.IGNORECASE
         )
-        identificacao["endereco"] = bloco[1][0].replace('\n', ', ').strip()
-    elif endereco_matches:
-        identificacao["endereco"] = bloco[0][0].replace('\n', ', ').strip()
+        if len(bloco) >= 2:
+            identificacao["endereco"] = bloco[1][0].replace('\n', ', ').strip()
+        elif len(bloco) == 1:
+            identificacao["endereco"] = bloco[0][0].replace('\n', ', ').strip()
     else:
         identificacao["endereco"] = "N/A"
+
 
 
     unidade_matches = re.findall(r"([A-Z\s]{10,})\n(?:AV|RUA|RODOVIA|ESTRADA)\s+[^\n]+", texto)

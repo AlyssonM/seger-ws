@@ -6,6 +6,7 @@ from google import genai
 from google.genai import types
 from src.parser_regex import extrair_dados_completos_da_fatura_regex
 from datetime import date
+import re
 
 # 1) Cliente Gemini configurado via API key
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"), http_options=types.HttpOptions(api_version='v1alpha'))
@@ -23,70 +24,88 @@ def extrair_dados_completos_da_fatura(pdf_path: str, via_regex: bool = True) -> 
     texto = _extrair_texto_pdf(pdf_path)
     # print(f"texto:\n{texto}\n\n")
     if via_regex:
-        return extrair_dados_completos_da_fatura_regex(texto)
+        try:
+            resultado = extrair_dados_completos_da_fatura_regex(texto)
+            return resultado
+        except Exception as e:
+            import traceback
+            traceback_str = traceback.format_exc()
+            print("❌ ERRO ao aplicar regex:\n", traceback_str)
+            return {"error": f"Erro ao aplicar regex: {str(e)}"}
     # 3) Monta conteúdo no formato chat
     system_prompt = """
     Você é um assistente especializado em extrair dados de faturas de energia elétrica da EDP.
+
     Retorne **somente** um JSON com a estrutura abaixo, preenchendo cada campo que aparecer na fatura
-    (e omitindo chaves cujo dado não exista). Use ponto como separador decimal, não inclua unidades
-    e não acrescente nenhum texto fora do JSON.
+    (e omitindo chaves cujo dado não exista). 
+
+    **Regras obrigatórias:**
+    - Use ponto como separador decimal.
+    - Não inclua unidades nos números (como kWh, R$ ou kW).
+    - Não acrescente nenhum texto fora do JSON.
+    - **Não** adicione crase tripla (```json) antes ou depois do JSON.
+
+    Estrutura esperada:
 
     {
     "identificacao": {
-        "numero_instalacao":         <string>,
-        "numero_cliente":            <string>,
-        "mes_referencia":            <string>,      # formato mm/aaaa
-        "grupo_tarifario":           <string>,
-        "classe":                    <string>,
-        "endereco":                  <string>,      # endereço completo (rua, cidade, CEP, se disponível)
-        "tensao":                    <string>,      # valor numérico como string, ex: "11.400"
-        "tensaoUnid":                <string>,      # ex: "V", "kV"
-        "nivel_tensao":              <string>,      # ex: "baixa tensão", "média tensão", "alta tensão"
-        "unidade":                   <string>       # nome da unidade consumidora (ex: SECRETARIA DE ...)
+        "numero_instalacao": <string>,
+        "numero_cliente": <string>,
+        "mes_referencia": <string>,  // formato mm/aaaa
+        "grupo_tarifario": <string>,
+        "classe": <string>,
+        "endereco": <string>,        // rua, número, bairro, cidade, CEP
+        "tensao": <string>,          // ex: "11400"
+        "tensaoUnid": <string>,      // "V" ou "kV"
+        "nivel_tensao": <string>,    // baixa tensão, média tensão, alta tensão
+        "unidade": <string>          // nome da unidade consumidora
     },
 
     "leituras": {
-        "leitura_inicio":            "dd/mm/aaaa",
-        "leitura_fim":               "dd/mm/aaaa",
-        "leitura_anterior_kwh":      <number>,
-        "leitura_atual_kwh":         <number>
+        "leitura_inicio": "dd/mm/aaaa",
+        "leitura_fim": "dd/mm/aaaa",
+        "leitura_anterior_kwh": <number>,
+        "leitura_atual_kwh": <number>
     },
 
     "consumo_ativo": {
-        "ponta_kwh":                 <number>,
-        "fora_ponta_kwh":            <number>,
-        "intermediario_kwh":         <number>,      # caso exista
-        "total_kwh":                 <number>
+        "ponta_kwh": <number>,
+        "fora_ponta_kwh": <number>,
+        "intermediario_kwh": <number>,   // apenas se existir
+        "total_kwh": <number>
     },
 
     "demanda": {
         "maxima": [
-        { "periodo": "ponta",       "valor_kw": <number> },
-        { "periodo": "fora_ponta",  "valor_kw": <number> }
+        { "periodo": "ponta", "valor_kw": <number> },
+        { "periodo": "fora_ponta", "valor_kw": <number> }
         ],
-        "contratada_kw":             <number>,
-        "nao_utilizada_kw":          <number>,
+        "contratada_kw": <number>,
+        "nao_utilizada_kw": <number>,
         "dmcr": [
-        { "periodo": "ponta",       "valor_kw": <number> },
-        { "periodo": "fora_ponta",  "valor_kw": <number> }
-        ]
+        { "periodo": "ponta", "valor_kw": <number> },
+        { "periodo": "fora_ponta", "valor_kw": <number> }
+        ],
+        "fora_ponta_kw": <number>,       // valor da demanda faturada (separado do 'maxima')
+        "tarifa_unitaria": <number>,     // valor unitário da demanda
+        "valor_total": <number>          // valor total cobrado pela demanda
     },
 
     "energia_reativa": {
-        "ponta_kvarh":               <number>,
-        "fora_ponta_kvarh":          <number>,
-        "total_kvarh":               <number>,
+        "ponta_kvarh": <number>,
+        "fora_ponta_kvarh": <number>,
+        "total_kvarh": <number>,
         "excedente": {
-        "ponta_kwh":               <number>,
-        "fora_ponta_kwh":          <number>,
-        "total_kwh":               <number>
+        "ponta_kwh": <number>,
+        "fora_ponta_kwh": <number>,
+        "total_kwh": <number>
         }
     },
 
     "tarifas": [
         {
         "descricao": <string>,
-        "periodo": <string>,
+        "periodo": <string>,  // ponta, fora_ponta, intermediario, etc.
         "quantidade": <number>,
         "tarifa_unitaria": <number>,
         "valor_total": <number>
@@ -95,14 +114,24 @@ def extrair_dados_completos_da_fatura(pdf_path: str, via_regex: bool = True) -> 
 
     "componentes_extras": [
         {
-        "descricao": <string>,
-        "valor_total": <number>
+        "descricao": "Contribuição de Ilum. Pública - Lei Municipal",
+        "quantidade": <number>,
+        "tarifa_unitaria": <number>,
+        "valor_total": <number>,
+        "valor_impostos": <number>
+        },
+        {
+        "descricao": "Bandeira Tarifária",
+        "quantidade": <number>,
+        "tarifa_unitaria": <number>,
+        "valor_total": <number>,
+        "valor_impostos": <number>
         }
     ],
 
     "impostos": [
         {
-        "nome": <string>,
+        "nome": <string>,                // PIS, COFINS, ICMS
         "base_calculo": <number>,
         "aliquota": <number>,
         "valor": <number>
@@ -110,12 +139,13 @@ def extrair_dados_completos_da_fatura(pdf_path: str, via_regex: bool = True) -> 
     ],
 
     "valores_totais": {
-        "subtotal_servicos":         <number>,
-        "subtotal_encargos":         <number>,
-        "valor_total_fatura":        <number>
+        "subtotal_servicos": <number>,
+        "subtotal_encargos": <number>,
+        "valor_total_fatura": <number>
     }
     }
     """
+
 
 
     contents = types.Content(
@@ -131,20 +161,22 @@ def extrair_dados_completos_da_fatura(pdf_path: str, via_regex: bool = True) -> 
         contents=contents,
         config=types.GenerateContentConfig(
             temperature=0.0,
-            max_output_tokens=1200
+            max_output_tokens=5000
         )
     )
     # data_json = extrair_dados_completos_da_fatura_regex(texto)
     # print(f"resposta com regex:\n{data_json}")
     
     # 5) Parse do JSON retornado
-    print(f"resposta do modelo:\n{response.text}")
     try:
-        return json.loads(response.text)
+        clean_text = re.sub(r"^```json\s*|\s*```$", "", response.text.strip(), flags=re.MULTILINE)
+        # print(f"resposta do modelo:\n{clean_text}")
+        return json.loads(clean_text)
         # return data_json
     except json.JSONDecodeError:
+        print("❌ JSON mal formatado retornado pelo modelo:\n", response.text)
         # return {"raw": response.text}
-        return {"error": "JSON decoding error"}
+        return {"error": "JSON decoding error", "raw_response": response.text}
 
 def analisar_eficiencia_energetica(
     fatura_dados: List[Dict[str, Any]],

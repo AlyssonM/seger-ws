@@ -61,9 +61,9 @@ def baixar_faturas_por_instalacao(instalacoes: list[str], data_inicio: str, data
         page.keyboard.type(LOGIN_SENHA)
         page.keyboard.press("Tab")
         page.wait_for_selector("button#acessar:enabled", timeout=5000)
-        page.wait_for_timeout(100)
+        page.wait_for_timeout(500)
         page.click("button#acessar")
-        for _ in range(300):
+        for _ in range(5000):
             if "/servicos" in page.url:
                 break
             page.wait_for_timeout(100)
@@ -84,6 +84,7 @@ def baixar_faturas_por_instalacao(instalacoes: list[str], data_inicio: str, data
                 # Vai para página de consulta
                 page.goto("https://www.edponline.com.br/servicos/consulta-debitos", wait_until="load")
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                page.wait_for_timeout(200)
                 page.fill('input[name="Instalacao"]', numero)
                 page.click('button:has-text("Avançar")')
                 page.wait_for_timeout(3000)
@@ -103,7 +104,7 @@ def baixar_faturas_por_instalacao(instalacoes: list[str], data_inicio: str, data
             if not sucesso:
                 print("  ❌ Falha ao carregar faturas após 3 tentativas. Pulando instalação.")
                 continue
-            
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)") 
             ver_mais = page.locator('button:has-text("Ver mais faturas")')
             ver_mais.wait_for(state="visible", timeout=30000)
             # Ver mais faturas
@@ -112,7 +113,7 @@ def baixar_faturas_por_instalacao(instalacoes: list[str], data_inicio: str, data
                     ver_mais = page.locator('button:has-text("Ver mais faturas")')
                     if ver_mais.is_visible():
                         ver_mais.click()
-                        page.wait_for_timeout(1000)
+                        page.wait_for_timeout(500)
                     else:
                         break
                 except:

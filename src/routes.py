@@ -60,11 +60,14 @@ def dados_fatura():
     if not pdf_path:
         return jsonify({"error": "pdf_path é obrigatório"}), 400
 
+    # print(f"Extraindo dados da fatura de {pdf_path}")
     try:
         dados = extrair_dados_completos_da_fatura(pdf_path, via_regex=via_regex)
         return jsonify(dados)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        import traceback
+        traceback_str = traceback.format_exc()
+        return jsonify({"error": str(traceback_str)}), 500
 
 @bp.route("/dados-fatura/teste", methods=["POST"])
 def dados_fatura_teste():
@@ -94,7 +97,9 @@ def dados_fatura_teste():
             "llm":   dados_llm,
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        import traceback
+        traceback_str = traceback.format_exc()
+        return jsonify({"error": str(traceback_str)}), 500
 
 @bp.route("/analisar-fatura/teste", methods=["POST"])
 def analisar_faturas_teste():
@@ -103,6 +108,7 @@ def analisar_faturas_teste():
     """
     data = request.get_json()
     pdf_paths = data.get("pdf_paths", [])
+    via_regex = data.get("via_regex", True)
     headers = {
         "Content-Type": "application/json",
         "X-API-KEY": "chave-secreta-supersegura"
@@ -114,14 +120,17 @@ def analisar_faturas_teste():
     for pdf_path in pdf_paths:
         try:
             # Chama o endpoint interno para obter os dados da fatura
-            response = requests.post(SEGER_DADOS_FATURA_URL, json={"pdf_path": pdf_path}, headers=headers)
-            response.raise_for_status() # Levanta um erro para respostas de status ruins
+            response = requests.post(SEGER_DADOS_FATURA_URL, json={"pdf_path": pdf_path, "via_regex": via_regex}, headers=headers)
+            response.raise_for_status()
             fatura_json = response.json()
-            #print(f"Dados da fatura para {pdf_path}:\n{fatura_json}")
+            # print(f"Dados da fatura para {pdf_path}:\n{fatura_json}")
             faturas_data.append(fatura_json)
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
+            import traceback
+            traceback_str = traceback.format_exc()
+            print(f"❌ HTTP Error - Status: {response.status_code} - Response: {response.text}")
             # Trata erros na chamada ao endpoint de dados da fatura
-            return jsonify({"error": f"Erro ao processar PDF {pdf_path}: {e}"}), 500
+            return jsonify({"error": f"Erro ao processar PDF {pdf_path}: {traceback_str}"}), 500
         except json.JSONDecodeError:
             # Trata erros na decodificação do JSON da resposta
             return jsonify({"error": f"Erro ao decodificar JSON para {pdf_path}"}), 500
