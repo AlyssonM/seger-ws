@@ -10,12 +10,13 @@ import logging
 load_dotenv()
 
 BASE_DIR    = os.path.join(os.getcwd(), "faturas_edp")
+LOG_DIR     = os.path.join(os.getcwd(), "src/logs")
 LOGIN_EMAIL = os.getenv("EDP_LOGIN_EMAIL", "")
 LOGIN_SENHA = os.getenv("EDP_LOGIN_SENHA", "")
 
 # Configuração do logger
-log_file = os.path.join(BASE_DIR, "scraper_edp.log")
-os.makedirs(BASE_DIR, exist_ok=True)  # Garante que o diretório existe
+log_file = os.path.join(LOG_DIR, "scraper_edp.log")
+os.makedirs(LOG_DIR, exist_ok=True)  # Garante que o diretório existe
 
 logging.basicConfig(
     filename=log_file,
@@ -272,7 +273,7 @@ def baixar_faturas_por_instalacao(instalacoes: list[str], data_inicio: str, data
                     # logging.info(f"      ✔️ Salvo em: {dest}")
                     # saved_paths.append(dest)
                     # download = download_info.value
-                    nome = f"fatura_{i+1}_{ref}.pdf"
+                    nome = f"fatura_{ref}.pdf"
                     caminho = os.path.join(pasta_instalacao, nome)
                     download.save_as(caminho)
                     saved_paths.append(caminho)

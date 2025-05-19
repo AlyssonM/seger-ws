@@ -8,9 +8,27 @@ from src.utils.tarifas import calcular_tarifa_azul, calcular_tarifa_verde
 from src.utils.tarifas import extrair_tarifa_compacta_por_modalidade
 from src.optmization import opt_tarifa_verde, opt_tarifa_azul
 import requests
+import os
+import re
+from datetime import datetime
+import logging
 
 bp = Blueprint("seger", __name__, url_prefix="/api/seger")
 SEGER_DADOS_FATURA_URL = "http://localhost:5000/api/seger/dados-fatura"
+
+# Mapa de meses
+MES_MAP = {
+    "JAN": 1, "FEV": 2, "MAR": 3, "ABR": 4,
+    "MAI": 5, "JUN": 6, "JUL": 7, "AGO": 8,
+    "SET": 9, "OUT": 10, "NOV": 11, "DEZ": 12
+}
+
+def ref_to_date(ref: str) -> datetime:
+    try:
+        mes, ano = ref.upper().split("-")
+        return datetime(int(ano), MES_MAP[mes], 1)
+    except:
+        return datetime.min
 
 def converter_tarifas_para_kwh(tarifas_compactadas):
     # Define quais chaves são tarifas de energia (em MWh e devem ser convertidas)
@@ -60,7 +78,7 @@ def dados_fatura():
     if not pdf_path:
         return jsonify({"error": "pdf_path é obrigatório"}), 400
 
-    # print(f"Extraindo dados da fatura de {pdf_path}")
+    # logging.info(f"Extraindo dados da fatura de {pdf_path}")
     try:
         dados = extrair_dados_completos_da_fatura(pdf_path, via_regex=via_regex)
         return jsonify(dados)
@@ -107,14 +125,40 @@ def analisar_faturas_teste():
     Endpoint para testar a análise de eficiência energética a partir de caminhos de PDFs.
     """
     data = request.get_json()
-    pdf_paths = data.get("pdf_paths", [])
     via_regex = data.get("via_regex", True)
+    data_inicio = data.get("data_inicio")
+    data_fim = data.get("data_fim")
+    codinstalacao = data.get("codInstalacao")
+
+    if not all([data_inicio, data_fim, codinstalacao]):
+        return jsonify({"error": "Parâmetros obrigatórios: data_inicio, data_fim, CodInstalacao"}), 400
+
+    dt1 = ref_to_date(data_inicio)
+    dt2 = ref_to_date(data_fim)
+    dt_ini, dt_fim = min(dt1, dt2), max(dt1, dt2)
+
+    pasta_instalacao = os.path.join("/app/faturas_edp/", codinstalacao)
+    logging.info(f"Pasta de instalações: {pasta_instalacao}")
+    if not os.path.exists(pasta_instalacao):
+        return jsonify({"error": f"Pasta não encontrada para instalação {codinstalacao}"}), 404
+
+    pdf_paths = []
+    for nome_arquivo in os.listdir(pasta_instalacao):
+        match = re.search(r'_(\w{3})-(\d{4})\.pdf$', nome_arquivo)
+        if match:
+            ref = f"{match.group(1)}-{match.group(2)}"
+            dt_ref = ref_to_date(ref)
+            if dt_ini <= dt_ref <= dt_fim:
+                pdf_paths.append(os.path.join(pasta_instalacao, nome_arquivo))
+
+    if not pdf_paths:
+        return jsonify({"error": "Nenhuma fatura encontrada no intervalo informado"}), 404
+    logging.info(f"PDFs encontrados: {pdf_paths}")
+
     headers = {
         "Content-Type": "application/json",
         "X-API-KEY": "chave-secreta-supersegura"
     }
-    if not pdf_paths:
-        return jsonify({"error": "Nenhum caminho de PDF fornecido"}), 400
 
     faturas_data = []
     for pdf_path in pdf_paths:
@@ -123,12 +167,12 @@ def analisar_faturas_teste():
             response = requests.post(SEGER_DADOS_FATURA_URL, json={"pdf_path": pdf_path, "via_regex": via_regex}, headers=headers)
             response.raise_for_status()
             fatura_json = response.json()
-            # print(f"Dados da fatura para {pdf_path}:\n{fatura_json}")
+            # logging.info(f"Dados da fatura para {pdf_path}:\n{fatura_json}")
             faturas_data.append(fatura_json)
         except Exception as e:
             import traceback
             traceback_str = traceback.format_exc()
-            print(f"❌ HTTP Error - Status: {response.status_code} - Response: {response.text}")
+            logging.info(f"❌ HTTP Error - Status: {response.status_code} - Response: {response.text}")
             # Trata erros na chamada ao endpoint de dados da fatura
             return jsonify({"error": f"Erro ao processar PDF {pdf_path}: {traceback_str}"}), 500
         except json.JSONDecodeError:
@@ -152,8 +196,8 @@ def analisar_faturas_teste():
         tarifa_atualizado = requests.get(tarifas_url_atualizado)
         tarifas_compactadas_atualizado = tarifa_atualizado.json()
         tarifas_compactadas_atualizado = converter_tarifas_para_kwh(tarifas_compactadas_atualizado)
-        # print(f"Tarifas originais: {tarifas_compactadas}")
-        # print(f"Tarifas atualizadas: {tarifas_compactadas_atualizado}")
+        # logging.info(f"Tarifas originais: {tarifas_compactadas}")
+        # logging.info(f"Tarifas atualizadas: {tarifas_compactadas_atualizado}")
         if not tarifa_azul or not tarifa_verde:
             return jsonify({"error": "Não foi possível obter as tarifas compactadas para as modalidades Azul e Verde."}), 500
 
@@ -173,9 +217,9 @@ def analisar_faturas_teste():
         if response.status_code == 200:
             with open("/app/src/data/relatorio_gerado.pdf", "wb") as f:
                 f.write(response.content)
-            print("✅ PDF salvo com sucesso: relatorio_gerado.pdf")
+            logging.info("✅ PDF salvo com sucesso: relatorio_gerado.pdf")
         else:
-            print(f"❌ Erro ao gerar relatório: {response.status_code} - {response.text}")
+            logging.error(f"❌ Erro ao gerar relatório: {response.status_code} - {response.text}")
 
         result = {
             "result_verde": result_verde,
@@ -229,7 +273,7 @@ def otimizar_faturas_teste():
             response = requests.post(SEGER_DADOS_FATURA_URL, json={"pdf_path": pdf_path}, headers=headers)
             response.raise_for_status() # Levanta um erro para respostas de status ruins
             fatura_json = response.json()
-            # print(f"Dados da fatura para {pdf_path}:\n{fatura_json}")
+            # logging.info(f"Dados da fatura para {pdf_path}:\n{fatura_json}")
             faturas_data.append(fatura_json)
         except requests.exceptions.RequestException as e:
             # Trata erros na chamada ao endpoint de dados da fatura

@@ -8,6 +8,7 @@ $ python edp_invoice_parser.py fatura_EDP_fev_2025.pdf
 from __future__ import annotations
 
 import json, re, sys
+import logging
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -408,14 +409,14 @@ def pdf_to_text(pdf: Path) -> str:
 
 def main() -> None:
     if len(sys.argv) < 2:
-        print("Uso: python edp_invoice_parser.py <fatura.pdf>", file=sys.stderr); sys.exit(1)
+        logging.error("Uso: python edp_invoice_parser.py <fatura.pdf>", file=sys.stderr); sys.exit(1)
     pdf = Path(sys.argv[1])
     if not pdf.exists():
-        print(f"Arquivo não encontrado: {pdf}", file=sys.stderr); sys.exit(1)
+        logging.error(f"Arquivo não encontrado: {pdf}", file=sys.stderr); sys.exit(1)
 
     texto = pdf_to_text(pdf)
     dados = extrair_dados_completos_da_fatura_regex(texto)
-    # print(json.dumps(dados, ensure_ascii=False, indent=2))
+    logging.info(json.dumps(dados, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
