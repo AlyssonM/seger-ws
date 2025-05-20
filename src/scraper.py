@@ -143,11 +143,11 @@ def baixar_faturas_por_instalacao(instalacoes: list[str], data_inicio: str, data
     saved_paths: list[str] = []
 
     with sync_playwright() as p:
-        browser, ctx = get_logged_context(p, mode, True)
+        browser, ctx = get_logged_context(p, mode, False)
         page = ctx.new_page()
 
         # Verifica se a sessão está válida
-        page.goto("https://www.edponline.com.br/servicos", wait_until="load")
+        page.goto("https://www.edponline.com.br/servicos/consulta-debitos", wait_until="load")
         if "/servicos" not in page.url:
             logging.info("🔒 Sessão expirada. Realizando login novamente.")
             realizar_login(page, LOGIN_EMAIL, LOGIN_SENHA)
@@ -175,12 +175,22 @@ def baixar_faturas_por_instalacao(instalacoes: list[str], data_inicio: str, data
 
                 # Vai para página de consulta
                 page.goto("https://www.edponline.com.br/servicos/consulta-debitos", wait_until="load")
+                logging.info("  🔄  Página de consulta carregada.")
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                page.wait_for_timeout(500)
+                # page.wait_for_timeout(500)
+                # codInstalacaoInput.wait_for(state="visible", timeout=20000)
+                # codInstalacaoInput.fill(numero)
+                # page.wait_for_selector("#Instalacao", state="visible", timeout=25000)
+                # page.fill("#Instalacao", numero)
                 page.fill('input[name="Instalacao"]', numero)
+                btn_click = page.locator('button:has-text("Avançar")')
+                btn_click.wait_for(state="visible", timeout=20000)
                 page.click('button:has-text("Avançar")')
-                page.wait_for_timeout(3000)
-                page.locator(f'a.instalacao:has-text("{numero}")').click()
+                logging.info("  🔄  Página Instalação do cliente carregada.")
+                link_click = page.locator(f'a.instalacao:has-text("{numero}")')
+                link_click.wait_for(state="visible", timeout=20000)
+                link_click.click()
+                # page.locator(f'a.instalacao:has-text("{numero}")').click()
                 # Verifica se o erro de carregamento apareceu
                 erro_carregamento = page.locator('text="Desculpe-nos! Não foi possível carregar as suas faturas"')
                 if erro_carregamento.is_visible(timeout=3000):
@@ -196,6 +206,7 @@ def baixar_faturas_por_instalacao(instalacoes: list[str], data_inicio: str, data
                 logging.error("  ❌ Falha ao carregar faturas após 3 tentativas. Pulando instalação.")
                 continue
             page.wait_for_timeout(3000)
+            logging.info("  🔄  Página de faturas carregada.")
             page.evaluate("window.scrollTo(0, document.body.scrollHeight)") 
             page.wait_for_timeout(500)
             # Ver mais faturas
