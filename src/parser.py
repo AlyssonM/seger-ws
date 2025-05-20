@@ -225,7 +225,7 @@ def analisar_eficiencia_energetica(
             "consumo_fora_ponta": consumo_fp,
             "demanda_ponta": demanda(t.get("DemandaPonta", 0.0)) if grupo == "A AZUL A4" else "-",
             "demanda_fora": demanda(t.get("DemandaForaPonta", 0.0)) if grupo != "BT Optante B3" else "-",
-            "ere": "0,27703",
+            "ere": "0,27926",
             "pis": f"{pis_aliq:.2f}".replace('.', ','),
             "cofins": f"{cofins_aliq:.2f}".replace('.', ','),
             "icms": f"{icms_aliq:.2f}".replace('.', ',')
@@ -272,7 +272,7 @@ def analisar_eficiencia_energetica(
         calcular_tabela_contrato_proposto
     )
 
-    res["tabela_12meses_otimizados"] = calcular_tabela_12meses(fatura_dados, tarifas, demanda_verde_otima, demanda_azul_p_otima, demanda_azul_fp_otima)
+    res["tabela_12meses_otimizados"] = calcular_tabela_12meses(fatura_dados, tarifas_atualizado, demanda_verde_otima, demanda_azul_p_otima, demanda_azul_fp_otima)
     res["tabela_ajuste"] = calcular_tabela_ajuste(fatura_dados, tarifas_atualizado)
     res["tabela_contrato_comparado"], total_atual = calcular_tabela_contrato_atual(fatura_dados, tarifas_atualizado, pis_aliq, cofins_aliq, icms_aliq)
     tabela_proposto, total_proposto = calcular_tabela_contrato_proposto(fatura_dados, tarifas_atualizado, demanda_verde_otima, pis_aliq, cofins_aliq, icms_aliq)

@@ -16,12 +16,24 @@ def get_tarifas_filtradas(
     """
     import datetime
 
+    # Mapeamento de abreviações PT -> EN
+    meses_pt_para_en = {
+        "JAN": "JAN", "FEV": "FEB", "MAR": "MAR", "ABR": "APR",
+        "MAI": "MAY", "JUN": "JUN", "JUL": "JUL", "AGO": "AUG",
+        "SET": "SEP", "OUT": "OCT", "NOV": "NOV", "DEZ": "DEC"
+    }
+
     try:
-        data_inicio = datetime.datetime.strptime("01-" + mes_ano, "%d-%b-%Y")
+        mes_pt, ano = mes_ano.upper().split("-")
+        mes_en = meses_pt_para_en.get(mes_pt)
+        if not mes_en:
+            raise ValueError(f"Mês inválido: {mes_pt}")
+
+        data_inicio = datetime.datetime.strptime(f"01-{mes_en}-{ano}", "%d-%b-%Y")
         data_fim = (data_inicio + pd.offsets.MonthEnd(1)).to_pydatetime()
     except Exception:
         return {"error": f"Formato inválido para o período: {mes_ano}. Use EX: JAN-2025"}
-
+        
     df = _tarifas_df.copy()
 
     df = df[df["Sigla"].fillna("").str.upper().str.contains(distribuidora.strip().upper())]

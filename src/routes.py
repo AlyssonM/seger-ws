@@ -12,6 +12,7 @@ import os
 import re
 from datetime import datetime
 import logging
+from operator import itemgetter
 
 bp = Blueprint("seger", __name__, url_prefix="/api/seger")
 SEGER_DADOS_FATURA_URL = "http://localhost:5000/api/seger/dados-fatura"
@@ -119,8 +120,8 @@ def dados_fatura_teste():
         traceback_str = traceback.format_exc()
         return jsonify({"error": str(traceback_str)}), 500
 
-@bp.route("/analisar-fatura/teste", methods=["POST"])
-def analisar_faturas_teste():
+@bp.route("/analisar-fatura", methods=["POST"])
+def analisar_faturas():
     """
     Endpoint para testar a análise de eficiência energética a partir de caminhos de PDFs.
     """
@@ -138,22 +139,26 @@ def analisar_faturas_teste():
     dt_ini, dt_fim = min(dt1, dt2), max(dt1, dt2)
 
     pasta_instalacao = os.path.join("/app/faturas_edp/", codinstalacao)
-    logging.info(f"Pasta de instalações: {pasta_instalacao}")
+
     if not os.path.exists(pasta_instalacao):
         return jsonify({"error": f"Pasta não encontrada para instalação {codinstalacao}"}), 404
 
     pdf_paths = []
+    pdf_infos = []
     for nome_arquivo in os.listdir(pasta_instalacao):
         match = re.search(r'_(\w{3})-(\d{4})\.pdf$', nome_arquivo)
         if match:
             ref = f"{match.group(1)}-{match.group(2)}"
             dt_ref = ref_to_date(ref)
             if dt_ini <= dt_ref <= dt_fim:
-                pdf_paths.append(os.path.join(pasta_instalacao, nome_arquivo))
+                pdf_infos.append((dt_ref, os.path.join(pasta_instalacao, nome_arquivo)))
 
+    logging.info(f"PDFs encontrados: {pdf_infos}")
+    pdf_infos.sort(key=itemgetter(0), reverse=True)
+    pdf_paths = [path for _, path in pdf_infos]
+    
     if not pdf_paths:
         return jsonify({"error": "Nenhuma fatura encontrada no intervalo informado"}), 404
-    logging.info(f"PDFs encontrados: {pdf_paths}")
 
     headers = {
         "Content-Type": "application/json",
@@ -184,26 +189,23 @@ def analisar_faturas_teste():
     periodo = "JUL-2021"
     distribuidora = "EDP ES"
     tarifas_url = f"http://localhost:5000/api/seger/tarifas?periodo={periodo}&distribuidora={distribuidora}"
-    periodo_atualizado = "DEC-2024"
+    periodo_atualizado = "AGO-2021"
     tarifas_url_atualizado = f"http://localhost:5000/api/seger/tarifas?periodo={periodo_atualizado}&distribuidora={distribuidora}"
     try:
         tarifas_response = requests.get(tarifas_url)
         tarifas_response.raise_for_status()
         tarifas_compactadas = tarifas_response.json()
         tarifas_compactadas = converter_tarifas_para_kwh(tarifas_compactadas)
-        tarifa_azul = tarifas_compactadas.get("azul", {})
-        tarifa_verde = tarifas_compactadas.get("verde", {})
         tarifa_atualizado = requests.get(tarifas_url_atualizado)
         tarifas_compactadas_atualizado = tarifa_atualizado.json()
         tarifas_compactadas_atualizado = converter_tarifas_para_kwh(tarifas_compactadas_atualizado)
+        tarifa_azul = tarifas_compactadas_atualizado.get("azul", {})
+        tarifa_verde = tarifas_compactadas_atualizado.get("verde", {})
         # logging.info(f"Tarifas originais: {tarifas_compactadas}")
         # logging.info(f"Tarifas atualizadas: {tarifas_compactadas_atualizado}")
         if not tarifa_azul or not tarifa_verde:
             return jsonify({"error": "Não foi possível obter as tarifas compactadas para as modalidades Azul e Verde."}), 500
 
-
-        # analise_resultado = calcular_tarifa_azul(faturas_data[0],tarifa_azul,173,463)
-        # analise_resultado = calcular_tarifa_verde(faturas_data,tarifa_verde, 570)
         result_verde = opt_tarifa_verde(faturas_data, tarifa_verde)
         result_azul = opt_tarifa_azul(faturas_data, tarifa_azul)
         analise_resultado = analisar_eficiencia_energetica(faturas_data, tarifas_compactadas, tarifas_compactadas_atualizado, result_verde["demanda_otima"], result_azul["demanda_p_otima"], result_azul["demanda_fp_otima"])
@@ -252,13 +254,40 @@ def tarifas():
     tarifa = extrair_tarifa_compacta_por_modalidade(dados)
     return jsonify(tarifa)
 
-@bp.route("/otimizacao/teste", methods=["POST"])
-def otimizar_faturas_teste():
+@bp.route("/otimizacao", methods=["POST"])
+def otimizar_faturas():
     """
     Endpoint para testar a análise de eficiência energética a partir de caminhos de PDFs.
     """
     data = request.get_json()
-    pdf_paths = data.get("pdf_paths", [])
+    data_inicio = data.get("data_inicio")
+    data_fim = data.get("data_fim")
+    codinstalacao = data.get("codInstalacao")
+    distribuidora = data.get("distribuidora","EDP ES")
+
+    if not all([data_inicio, data_fim, codinstalacao]):
+        return jsonify({"error": "Parâmetros obrigatórios: data_inicio, data_fim, codInstalacao"}), 400
+
+    dt1 = ref_to_date(data_inicio)
+    dt2 = ref_to_date(data_fim)
+    dt_ini, dt_fim = min(dt1, dt2), max(dt1, dt2)
+
+    pasta_instalacao = os.path.join("/app/faturas_edp/", codinstalacao)
+    if not os.path.exists(pasta_instalacao):
+        return jsonify({"error": f"Pasta não encontrada para instalação {codinstalacao}"}), 404
+
+    pdf_paths = []
+    for nome_arquivo in os.listdir(pasta_instalacao):
+        match = re.search(r'_(\w{3})-(\d{4})\.pdf$', nome_arquivo)
+        if match:
+            ref = f"{match.group(1)}-{match.group(2)}"
+            dt_ref = ref_to_date(ref)
+            if dt_ini <= dt_ref <= dt_fim:
+                pdf_paths.append(os.path.join(pasta_instalacao, nome_arquivo))
+
+    if not pdf_paths:
+        return jsonify({"error": "Nenhuma fatura encontrada no intervalo informado"}), 404
+
     headers = {
         "Content-Type": "application/json",
         "X-API-KEY": "chave-secreta-supersegura"
@@ -284,8 +313,7 @@ def otimizar_faturas_teste():
 
 
     # Chama a função de análise com os dados das faturas
-    periodo = "JUL-2021"
-    distribuidora = "EDP ES"
+    periodo = "JAN-2025"
     tarifas_url = f"http://localhost:5000/api/seger/tarifas?periodo={periodo}&distribuidora={distribuidora}"
     
     try:

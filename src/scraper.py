@@ -199,7 +199,7 @@ def baixar_faturas_por_instalacao(instalacoes: list[str], data_inicio: str, data
             page.evaluate("window.scrollTo(0, document.body.scrollHeight)") 
             page.wait_for_timeout(500)
             # Ver mais faturas
-            for _ in range(20):
+            for _ in range(21):
                 try:
                     ver_mais = page.locator('button:has-text("Ver mais faturas")')
                     if ver_mais.is_visible(timeout=3000):
@@ -265,7 +265,10 @@ def baixar_faturas_por_instalacao(instalacoes: list[str], data_inicio: str, data
                         continue  # pula para a próxima fatura
 
                     with page.expect_download() as dl:
-                        page.click('a:has-text("Baixar")')
+                        download_bt = page.locator('a:has-text("Baixar")')
+                        download_bt.wait_for(state="visible", timeout=15000)
+                        download_bt.click()
+                        # page.click('a:has-text("Baixar")')
                     download = dl.value
                     # nome     = f"fatura_{i+1}_{ref}.pdf"
                     # dest     = os.path.join(pasta, nome)
