@@ -16,23 +16,22 @@ from PyPDF2 import PdfReader
 
 
 # ╭─────────────────────────  HELPERS  ─────────────────────────╮
-# ▼ número:  1.234.567,89 | 1234567,89 | 1234567
-# NUMBER = r"\d{1,3}(?:\.\d{3})*(?:,\d+)?|\d+(?:,\d+)?"
-# ▼ número: 1.234.567,89 | 1234567,89 | 1234567 | 0.59
-NUMBER = (
-    r"\d{1,3}(?:\.\d{3})*(?:[.,]\d+)?|"  # 1.234.567,89  | 1.234.567
-    r"\d+[.,]\d+|\d+"                    # 1234567,89     | 1234567
-)
-
-DECIMAL = NUMBER                                            # alias p/ clareza
-
+NUMBER = r"\d+[.,]\d+|\d{1,3}(?:\.\d{3})*(?:[.,]\d+)?|\d+"
+DECIMAL = r"-?\d{1,3}(?:\.\d{3})*(?:,\d+)?-?"
 
 def _clean_num(n: str | None) -> float | None:
     if not n:
         return None
-    n = n.replace(".", "").replace(",", ".")
+    s = n.strip()
+    # detecta sinal no fim
+    neg = s.endswith("-")
+    # remove qualquer traço inicial ou final
+    s = s.lstrip("-").rstrip("-")
+    # normaliza para float Python
+    s = s.replace(".", "").replace(",", ".")
     try:
-        return float(n)
+        v = float(s)
+        return -v if neg else v
     except ValueError:
         return None
 
@@ -51,44 +50,113 @@ def _findall(pat: str, text: str, flags=0) -> List[Tuple[str, ...]]:
     return [m.groups() for m in re.finditer(pat, text, flags)]
 
 
+def formatar_proprio_title(texto: str) -> str:
+    # Corrige falta de espaço após vírgulas (ex: ",123" → ", 123")
+    texto = re.sub(r",(?=\S)", ", ", texto)
+
+    # Expansão de abreviações comuns (apenas se forem palavras isoladas)
+    abrevs = {
+        r'\bSec\b': 'Secretaria do',
+        r'\bEst\b': 'Estado',
+        r'\bRecurs\b': 'Recursos',  # para correções como "RECURS S HUMANOS"
+        r'\bGovr\b': 'Governador',
+        r'\bDept\b': 'Departamento',
+        r'\bUnid\b': 'Unidade',
+        r'\bAdm\b': 'Administrativo',
+    }
+    for padrao, subst in abrevs.items():
+        texto = re.sub(padrao, subst, texto, flags=re.IGNORECASE)
+
+    # Aplica capitalização
+    def custom_title_case(text):
+        words = text.lower().split()
+        titled_words = []
+        for word in words:
+            # Lista de conjunções e preposições que não devem ser capitalizadas (pode ser expandida)
+            if word in ["e", "de", "da", "do", "das", "dos", "para", "com"]:
+                titled_words.append(word)
+            else:
+                titled_words.append(word.capitalize())
+        return " ".join(titled_words)
+
+    resultado = custom_title_case(texto)
+
+
+    # Corrige siglas específicas que devem ficar em maiúsculas
+    siglas = {
+        r'\bEs\b': 'ES',
+        r'\bSn\b': 'SN',
+        r'\bIe\b': 'IE',
+        r'\bCep\b': 'CEP',
+        r'\bCnpj\b': 'CNPJ',
+    }
+    for padrao, subst in siglas.items():
+        resultado = re.sub(padrao, subst, resultado)
+
+    return resultado
+
 # ╭────────────────────  NÚCLEO DE EXTRAÇÃO  ───────────────────╮
 def extrair_dados_completos_da_fatura_regex(texto: str) -> Dict[str, Any]:
-    out: Dict[str, Any] = {}
+    out: Dict[str, Any] = {
+        "identificacao": {},
+        "leituras": {},
+        "consumo_ativo": {},
+        "demanda": {},
+        "energia_reativa": {},
+        "impostos": [],
+        "tarifas": {},
+        "componentes_extras": []
+    }
+    
     identificacao = {}
+    logging.info("Extraindo endereço...")
     # Endereço
-    endereco_matches = re.findall(
-        r"(AV|RUA|RODOVIA|ESTRADA)[^\n]*\n[^\n]*\n(?:CEP[:\s]*)?\d{5}-\d{3}", texto, flags=re.IGNORECASE
-    )
 
-    if endereco_matches:
-        bloco = re.findall(
-            r"((AV|RUA|RODOVIA|ESTRADA)[^\n]*\n[^\n]*\n(?:CEP[:\s]*)?\d{5}-\d{3})",
-            texto, flags=re.IGNORECASE
-        )
-        if len(bloco) >= 2:
-            identificacao["endereco"] = bloco[1][0].replace('\n', ', ').strip()
-        elif len(bloco) == 1:
-            identificacao["endereco"] = bloco[0][0].replace('\n', ', ').strip()
+    lines = texto.splitlines()
+
+    # Busca o CNPJ da EDP (distribuidora) e do cliente
+    cnpj_linhas = [(i, ln.strip()) for i, ln in enumerate(lines) if re.search(r"CNPJ[:\s]*\d{8,}", ln)]
+
+    if len(cnpj_linhas) >= 2:
+        # Segunda ocorrência é o CNPJ do cliente
+        idx, _ = cnpj_linhas[1]
+        
+        # Procura linha com CEP (com ou sem "CEP:")
+        for j in range(idx-1, max(idx-10, 0), -1):  # tenta mais linhas
+            if re.search(r"\d{5}-\d{3}", lines[j]):
+                cep_line = lines[j]
+                local_line = lines[j-1].strip()
+                logradouro_line = lines[j-2].strip()
+                unidade_candidates = []
+
+                # Coleta até 4 linhas acima do logradouro
+                for k in range(j - 3, j - 7, -1):
+                    if k < 0:
+                        continue
+                    l = lines[k].strip()
+                    if not l or re.search(r"EDP|Distrib", l, re.I):
+                        continue
+                    if re.search(r"\b(trif[aá]sico|grupo\s+[a-z0-9]+|classe|verde|vermelha|\d{2}/\d{2}/\d{4})", l, re.I):
+                        continue
+                    # Se linha parece conter classe/subclasse (ex: "PODER PUBLICO - ESTADUAL")
+                    if re.search(r"[A-Z\s]+-\s*[A-Z\s]+", l):
+                        break
+                    if re.search(r"\b(av|rua|rod|estrada|praça|alameda|sn|cep|cariacica|vit[oó]ria)\b", l, re.I):
+                        break
+                    unidade_candidates.insert(0, l)
+
+                unidade = " ".join(unidade_candidates).strip()
+                cep = re.search(r"\d{5}-\d{3}", cep_line).group(0)
+                identificacao["unidade"] = formatar_proprio_title(unidade)
+                identificacao["endereco"] = formatar_proprio_title(f"{logradouro_line}, {local_line}, CEP: {cep}")
+                break
+
     else:
+        identificacao["unidade"] = "N/A"
         identificacao["endereco"] = "N/A"
 
-
-
-    unidade_matches = re.findall(r"([A-Z\s]{10,})\n(?:AV|RUA|RODOVIA|ESTRADA)\s+[^\n]+", texto)
-
-    if len(unidade_matches) >= 3:
-        valor = unidade_matches[2]
-    elif len(unidade_matches) == 2:
-        valor = unidade_matches[1]
-    elif len(unidade_matches) == 1:
-        valor = unidade_matches[0]
-    else:
-        valor = "N/A"
-
-    identificacao["unidade"] = valor.replace("\n", " ").strip()
-
-
     # Tensão nominal e unidade
+    logging.info("Extraindo Tensão nominal...")
     tensao_match = re.search(r"\b(\d{1,3}[.,]?\d{0,3})\s*V\b", texto)
     if tensao_match:
         tensao_val = tensao_match.group(1).replace(",", ".")
@@ -105,6 +173,7 @@ def extrair_dados_completos_da_fatura_regex(texto: str) -> Dict[str, Any]:
             identificacao["nivel_tensao"] = "baixa tensão"
 
     # Demais campos
+    logging.info("Extraindo demais campos de identificação...")
     identificacao.update({
         # Número da instalação (ex: 0009500016)
         "numero_instalacao": _find(r"\b(\d{10})PAG\b", texto),
@@ -122,7 +191,6 @@ def extrair_dados_completos_da_fatura_regex(texto: str) -> Dict[str, Any]:
         "classe": _find(r"(PODER\s+PUBLICO\s*-\s*[A-Z\s]+)", texto),
     })
 
-
     # Mês de referência
     mes_ano = re.search(
         r"(Janeiro|Fevereiro|Mar[çc]o|Abril|Maio|Junho|Julho|Agosto|"
@@ -139,148 +207,98 @@ def extrair_dados_completos_da_fatura_regex(texto: str) -> Dict[str, Any]:
 
     # Atribuição final
     out["identificacao"] = {k: v for k, v in identificacao.items() if v}
-    # ---------- IDENTIFICAÇÃO ----------
-    # out["identificacao"] = {
-    #     "numero_instalacao": _find(r"COD\. IDENT\.\s*(\d+)", texto),
-    #     "numero_cliente":    _find(r"\b(0*\d{7,})\s*PAG", texto),   # ← fix
-    #     "grupo_tarifario":   _find(r"\b(A[0-9])\b", texto),
-    #     "classe":            _find(r"(PODER PUBLICO\s*-\s*[A-ZÁ-Ú ]+)", texto),
-    # }
-
-    # mes_ano = re.search(
-    #     r"(Janeiro|Fevereiro|Mar[çc]o|Abril|Maio|Junho|Julho|Agosto|"
-    #     r"Setembro|Outubro|Novembro|Dezembro)/(\d{4})", texto
-    # )
-    # if mes_ano:
-    #     nome, ano = mes_ano.groups()
-    #     mes_map = {
-    #         "Janeiro":"01","Fevereiro":"02","Março":"03","Marco":"03","Abril":"04",
-    #         "Maio":"05","Junho":"06","Julho":"07","Agosto":"08","Setembro":"09",
-    #         "Outubro":"10","Novembro":"11","Dezembro":"12"
-    #     }
-    #     out["identificacao"]["mes_referencia"] = f"{mes_map[nome]}/{ano}"
-
-    # out["identificacao"] = {k: v for k, v in out["identificacao"].items() if v}
 
     # ---------- LEITURAS ----------
+    logging.info("Extraindo informações das leituras...")
     out["leituras"] = {}
     if (m := re.search(r"Roteiro de leitura:.*?:\s*([0-3]\d/\d{2}/\d{4})\s*a\s*([0-3]\d/\d{2}/\d{4})", texto)):
         out["leituras"]["leitura_inicio"], out["leituras"]["leitura_fim"] = m.groups()
 
-    # def _cap(label: str) -> Tuple[int, int]:
-    #     if (m := re.search(rf"{label}.*?\s({NUMBER})\s+({NUMBER})", texto)):
-    #         ant, atu = (int(x.replace(".", "")) for x in m.groups())
-    #         return ant, atu
-    #     return 0, 0
-
-    # def _cap(label: str) -> tuple[int, int]:
-    #     # captura só os dois 1º-s inteiros depois da label
-    #     pat = rf"{label}.*?\s({NUMBER})\s+({NUMBER})"
-    #     if m := re.search(pat, texto):
-    #         ant, atu = m.groups()[:2]
-    #         return int(ant.replace('.', '')), int(atu.replace('.', ''))
-    #     return 0, 0
-
-
-    # ant_p, atu_p = _cap("Energia Ativa Ponta")
-    # ant_f, atu_f = _cap("Energia Ativa Fora Ponta")
-    # if ant_p + ant_f:
-    #     out["leituras"]["leitura_anterior_kwh"] = float(ant_p + ant_f)
-    # if atu_p + atu_f:
-    #     out["leituras"]["leitura_atual_kwh"] = float(atu_p + atu_f)
-
     out["leituras"] = {k: v for k, v in out["leituras"].items() if v}
 
     # ---------- CONSUMO ATIVO ----------
-    out["consumo_ativo"] = {
-        "ponta_kwh":      _clean_num(_find(r"Consumo\s+Ativo\s+Ponta\s+(" + NUMBER + ")", texto, re.I)),
-        "fora_ponta_kwh": _clean_num(_find(r"Consumo\s+Ativo\s+Fora\s+Ponta\s+(" + NUMBER + ")", texto, re.I)),
-    }
-    if all(out["consumo_ativo"].values()):
-        out["consumo_ativo"]["total_kwh"] = round(sum(out["consumo_ativo"].values()), 4)
-    out["consumo_ativo"] = {k: v for k, v in out["consumo_ativo"].items() if v is not None}
+    # Ponta
+    m = re.search(
+        rf"(?:TUSD\s*-\s*.*?Fornecida\s+Ponta|Consumo\s+Ativo\s+Ponta)\s+kWh\s+({NUMBER})",
+        texto, re.I
+    )
+    logging.info(f"match energia Ponta: {m}")
+    if m:
+        out["consumo_ativo"]["ponta_kwh"] = _clean_num(m.group(1))
 
-    # ---------- DEMANDA ----------
-    # dm = {}
-    # for tag, regex in {
-    #     "ponta":      r"Demanda Máx\s+Ponta.*?(" + NUMBER + ")\s+KW",
-    #     "fora_ponta": r"Demanda Máx\s+FPonta.*?(" + NUMBER + ")\s+KW"
-    # }.items():
-    #     if (val := _clean_num(_find(regex, texto, re.I))):
-    #         dm.setdefault("maxima", []).append({"periodo": tag, "valor_kw": val})
+    # Fora-Ponta
+    m = re.search(
+        rf"(?:TUSD\s*-\s*.*?Fornecida\s+(?:Fora\s+Ponta|FPonta)|(?:TUSD\s*-\s*)?Cons\s+Ativo\s+(?:Fora\s+Ponta|FPonta))\s+kWh\s+({NUMBER})",
+        texto, re.I
+    )
+    logging.info(f"match energia Fora Ponta: {m}")
+    if m:
+        out["consumo_ativo"]["fora_ponta_kwh"] = _clean_num(m.group(1))
 
-    # dm["contratada_kw"] = _clean_num(_find(r"Demanda Contratada.*?(" + NUMBER + ")\s+KW", texto, re.I))
+    # Energia Injetada (com possível "-" no fim)
+    m = re.search(
+        rf"(?:Inj\.\w+|Injetada)[^\n]*?\s({DECIMAL})\s+KWH",
+        texto, re.I
+    )
+    logging.info(f"match energia injetada: {m}")
+    if m:
+        energia_injetada = _clean_num(m.group(1))
+        logging.info(f"energia injetada: {energia_injetada}")
+        out["consumo_ativo"]["energia_injetada_kwh"] = energia_injetada
 
-    # for tag, regex in {
-    #     "ponta":      r"DMCR\s+Ponta.*?(" + NUMBER + ")\s+KW",
-    #     "fora_ponta": r"DMCR\s+Fora\s+Ponta.*?(" + NUMBER + ")\s+KW",
-    # }.items():
-    #     if (val := _clean_num(_find(regex, texto, re.I))):
-    #         dm.setdefault("dmcr", []).append({"periodo": tag, "valor_kw": val})
+    # Total
+    if "ponta_kwh" in out["consumo_ativo"] and "fora_ponta_kwh" in out["consumo_ativo"]:
+        out["consumo_ativo"]["total_kwh"] = round(
+            out["consumo_ativo"]["ponta_kwh"] +
+            out["consumo_ativo"]["fora_ponta_kwh"], 4)
 
-    # out["demanda"] = {k: v for k, v in dm.items() if v not in (None, [], {})}
-    
+
+    # ---------- DEMANDA ---------- 
     contrat_pat = rf"Demanda\s+Contratual[- ]KW\s+({NUMBER})"
     out.setdefault("demanda", {})["contratada_kw"] = _clean_num(_find(contrat_pat, texto, re.I))
-    # ---------- DEMANDA MÁXIMA (leitura) -------------------------------
-    # max_pat = rf"""
-    #     Demanda \s+ Máx[íi]ma \s+ 
-    #     (Ponta | FPonta | F \s*Ponta | Fora \s*Ponta)   # período
-    #     .*? \s                                          # até o último campo numérico
-    #     ({NUMBER}) (?=\s+KW|\s*$)                       # número antes de 'KW' ou fim
-    # """
-    # max_pat = rf"""
-    #     Demanda\s+Máx[íi]ma\s+
-    #     (Ponta|F(?:Ponta|ora\s*Ponta))
-    #     .*?
-    #     ({NUMBER})\s+KW
-    # """
+
+    # ---------- DEMANDA MÁXIMA (leitura) ----------
+    # aceita “Máx” ou “Máxima”
+    out.setdefault("demanda", {})
     max_pat = rf"""
-        Demanda\s+Máx[íi]ma\s+
-        (Ponta|FPonta|Fora\s*Ponta)
-        .*?
-        ({NUMBER})\s*[kK][wW]
+        Demanda\s+Máx(?:ima)?\s+           # “Máx” ou “Máxima”
+        (Ponta|FPonta|Fora\s*Ponta)        # período
+        .*?                                # ignora o que vier no meio
+        ({NUMBER})\s*[kK][wW]              # valor em kW
     """
-
-    # for periodo, qtd in _findall(max_pat, texto, re.I | re.X):
-    #     out.setdefault("demanda", {}).setdefault("maxima", []).append({
-    #         "periodo": "ponta" if re.search(r"^ponta$", periodo.strip(), re.I) else "fora_ponta",
-    #         "valor_kw": _clean_num(qtd),
-    #     })
-
-    for periodo, qtd in _findall(max_pat, texto, re.I | re.X):
-        out.setdefault("demanda", {}).setdefault("maxima", []).append({
-            "periodo": "ponta" if "ponta" in periodo.lower() and not "f" in periodo.lower() else "fora_ponta",
-            "valor_kw": _clean_num(qtd),
+    for periodo, qtd in re.findall(max_pat, texto, re.I | re.X):
+        chave = "ponta" if periodo.lower().startswith("ponta") else "fora_ponta"
+        out["demanda"].setdefault("maxima", []).append({
+            "periodo": chave,
+            "valor_kw": _clean_num(qtd)
         })
 
-    # dmcr_pat = rf"""
-    #     DMCR \s+
-    #     (Ponta |                 # “Ponta”
-    #     FPonta | F \s*Ponta |   # “FPonta” ou “F Ponta”
-    #     Fora \s*Ponta)          # “Fora Ponta”  ← NOVO
-    #     .*? \s
-    #     ({NUMBER}) (?=\s+KW|\s*$)
-    # """
+    # ---------- ULTRAPASSAGEM ----------
+    # caso exista a linha “Ultrapassagem kW 13,5420 …”
+    m = re.search(
+        rf"Ultrapassagem\s+kW\s+({NUMBER})",
+        texto, re.I
+    )
+    if m:
+        out["demanda"]["ultrapassagem_kw"] = _clean_num(m.group(1))
+
     dmcr_pat = rf"""
-        DMCR\s+        # início
-        (Ponta|F(?:Ponta|ora\s*Ponta))    # tipo
-        .*?            # ignora intermediários
-        ({NUMBER})\s+KW
+        (?m)                                # modo multiline, ^ e $ funcionam por linha
+        ^(?!Perdas)                        # não captura linhas que comecem com “Perdas”
+        DMCR\s+                            # linha começando com “DMCR”
+        (Ponta|F(?:Ponta|ora\s*Ponta))     # captura “Ponta” ou “FPonta” / “F Ponta” / “Fora Ponta”
+        .*?                                # ignora o resto
+        ({NUMBER})\s*[kK][wW]              # o valor em kW
     """
 
-    # for periodo, qtd in _findall(dmcr_pat, texto, re.I | re.X):
-    #     tipo = "ponta" if re.fullmatch(r"Ponta", periodo, re.I) else "fora_ponta"
-    #     out.setdefault("demanda", {}).setdefault("dmcr", []).append({
-    #         "periodo":  tipo,
-    #         "valor_kw": _clean_num(qtd),
-    #     })
-    for periodo, qtd in _findall(dmcr_pat, texto, re.I | re.X):
-        out.setdefault("demanda", {}).setdefault("dmcr", []).append({
-            "periodo": "ponta" if re.search(r"^ponta$", periodo.strip(), re.I) else "fora_ponta",
-            "valor_kw": _clean_num(qtd),
+    out.setdefault("demanda", {})
+    for periodo, qtd in re.findall(dmcr_pat, texto, re.I | re.X):
+        chave = "ponta" if periodo.lower().startswith("ponta") else "fora_ponta"
+        out["demanda"].setdefault("dmcr", []).append({
+            "periodo": chave,
+            "valor_kw": _clean_num(qtd)
         })
- 
+
     # ---------- DEMANDA (custos)  -----------------------------------
     # procura a primeira linha que contenha "Demanda" + 3 números
     for ln in texto.splitlines():
@@ -304,6 +322,7 @@ def extrair_dados_completos_da_fatura_regex(texto: str) -> Dict[str, Any]:
         "ponta_kvarh":      _clean_num(_find(r"Energia Reativa\s+Ponta.*?(" + NUMBER + ")\s+KVH", texto, re.I)),
         "fora_ponta_kvarh": _clean_num(_find(r"Energia Reativa\s+FPonta.*?(" + NUMBER + ")\s+KVH", texto, re.I)),
     }
+
     if all(er.values()):
         er["total_kvarh"] = round(er["ponta_kvarh"] + er["fora_ponta_kvarh"], 4)
 
@@ -319,22 +338,24 @@ def extrair_dados_completos_da_fatura_regex(texto: str) -> Dict[str, Any]:
     out["energia_reativa"] = {k: v for k, v in er.items() if v not in (None, {}, [])}
 
     # ---------- IMPOSTOS ----------
-    impostos = []
-    for valor, aliq, base, nome in _findall(
-            rf"({NUMBER})\s+({NUMBER})\s+({NUMBER})\s+(PIS|COFINS|ICMS)",
-            texto, re.I
-    ):
-        impostos.append({
-            "nome":          nome,
-            "base_calculo":  _clean_num(base),
-            "aliquota":      _clean_num(aliq),
-            "valor":         _clean_num(valor),
-        })
-    if impostos:
-        out["impostos"] = impostos
+    logging.info("Extraindo informações sobre impostos...")
+    
+    impostos_dict = {}
+    for valor, aliq, base, nome in _findall(rf"({NUMBER})\s+({NUMBER})\s+({NUMBER})\s+(PIS|COFINS|ICMS)", texto, re.I):
+        nome = nome.upper()
+        if nome not in impostos_dict:
+            impostos_dict[nome] = {
+                "nome": nome,
+                "aliquota": _clean_num(aliq),
+                "base_calculo": _clean_num(base),
+                "valor": _clean_num(valor)
+            }
 
+    # Converte para lista se quiser manter a estrutura esperada
+    out["impostos"] = list(impostos_dict.values())
 
     # ---------- TARIFAS ----------
+    logging.info("Extraindo informações sobre tarifas...")
     tarifas = []
     tarifa_pat = (r"(TUSD|TE)\s*-\s*Cons(?:\w+)?\s+Ativo\s+"
                   r"(Ponta|FPonta|Fora\s+Ponta)\s+kWh\s+"
@@ -358,6 +379,7 @@ def extrair_dados_completos_da_fatura_regex(texto: str) -> Dict[str, Any]:
         }
 
     # ---------- COMPONENTES EXTRAS (opcionais) ----------
+    logging.info("Extraindo informações sobre componentes extras...")
     extras = []
 
     extra_pat = rf"""
@@ -391,15 +413,14 @@ def extrair_dados_completos_da_fatura_regex(texto: str) -> Dict[str, Any]:
                 "valor_impostos": _clean_num(imposto) 
             })
 
-    if extras:
-        out["componentes_extras"] = extras
+    # if extras:
+    #     out["componentes_extras"] = extras
+    out["componentes_extras"] = extras
 
-
-
-
+    # logging.info(f"Extrações: {out}")
+    return out
     # ---------- LIMPEZA ----------
-    return {k: v for k, v in out.items() if v not in (None, {}, [], "")}
-
+    # return {k: v for k, v in out.items() if v not in (None, {}, [], "")}
 
 # ╭────────────────────  UTIL / CLI  ───────────────────╮
 def pdf_to_text(pdf: Path) -> str:

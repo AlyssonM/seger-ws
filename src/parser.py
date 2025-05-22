@@ -257,6 +257,7 @@ def analisar_eficiencia_energetica(
             "demanda_fora_ponta": formatar(dmcr_fora),
             "energia_ponta": formatar(consumo.get("ponta_kwh", 0.0)),
             "energia_fora_ponta": formatar(consumo.get("fora_ponta_kwh", 0.0)),
+            "energia_injetada": formatar(consumo.get("energia_injetada_kwh",0.0)),
             "ere": formatar(ere["valor_total"]),
             "valor_total": formatar(valor)
         })

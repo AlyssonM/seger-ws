@@ -97,7 +97,8 @@ def calcular_tarifa_verde(fatura_dados, tarifas, demanda_contratada):
     for dados in fatura_dados:
         consumo = dados["consumo_ativo"]
         demanda = dados["demanda"]
-    
+        energia_injetada = consumo.get("energia_injetada_kwh", 0.0)
+
         # Tarifas
         tusd_fp = float(tarifas["TUSDforaPonta"])
         tusd_p = float(tarifas["TUSDponta"])
@@ -105,7 +106,7 @@ def calcular_tarifa_verde(fatura_dados, tarifas, demanda_contratada):
         te_p = float(tarifas["TEponta"])
         demanda_fp_tarifa = float(tarifas["DemandaForaPonta"])  # mesma para ponta e fora
 
-        energia_fp = consumo["fora_ponta_kwh"] * (tusd_fp + te_fp)
+        energia_fp = max(0, consumo["fora_ponta_kwh"] - energia_injetada) * (tusd_fp + te_fp)
         energia_p = consumo["ponta_kwh"] * (tusd_p + te_p)
 
         energia_total = energia_fp + energia_p
@@ -205,6 +206,7 @@ def calcular_tarifa_azul(fatura_dados, tarifas, dm):
     for dados in fatura_dados:
         consumo = dados["consumo_ativo"]
         demanda = dados["demanda"]
+        energia_injetada = consumo.get("energia_injetada_kwh", 0.0)
 
         # Tarifas
         tusd_fp = float(tarifas["TUSDforaPonta"])
@@ -214,7 +216,7 @@ def calcular_tarifa_azul(fatura_dados, tarifas, dm):
         demanda_fp_tarifa = float(tarifas["DemandaForaPonta"])
         demanda_p_tarifa = float(tarifas["DemandaPonta"])
 
-        energia_fp = consumo["fora_ponta_kwh"] * (tusd_fp + te_fp)
+        energia_fp = max(0, consumo["fora_ponta_kwh"] - energia_injetada) * (tusd_fp + te_fp)
         energia_p = consumo["ponta_kwh"] * (tusd_p + te_p)
 
         energia_total = energia_fp + energia_p

@@ -253,7 +253,7 @@ def calcular_tabela_contrato_atual(
         tabela.append({
             "data": mes_formatado,
             "consumo": fmt(total_consumo),
-            "demanda": fmt(valor_demanda),
+            "demanda": fmt(contratada),
             "ultrapassagem": fmt(valor_ultrapassagem),
             "bip": fmt(bandeira_liquido),
             "ilum": fmt(iluminacao),
@@ -276,7 +276,7 @@ def calcular_tabela_contrato_atual(
     tabela.append({
         "data": "\\textbf{CONTRATO ATUAL}",
         "consumo": f"\\textbf{{{fmt(total['consumo'])}}}",
-        "demanda": f"\\textbf{{{fmt(total['demanda'])}}}",
+        "demanda": f"\\textbf{{{fmt(contratada)}}}",
         "ultrapassagem": f"\\textbf{{{fmt(total['ultrapassagem'])}}}",
         "bip": f"\\textbf{{{fmt(total['bip'])}}}",
         "ere": f"\\textbf{{{fmt(total['ere'])}}}",

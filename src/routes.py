@@ -153,7 +153,7 @@ def analisar_faturas():
             if dt_ini <= dt_ref <= dt_fim:
                 pdf_infos.append((dt_ref, os.path.join(pasta_instalacao, nome_arquivo)))
 
-    logging.info(f"PDFs encontrados: {pdf_infos}")
+    # logging.info(f"PDFs encontrados: {pdf_infos}")
     pdf_infos.sort(key=itemgetter(0), reverse=True)
     pdf_paths = [path for _, path in pdf_infos]
     
@@ -189,7 +189,7 @@ def analisar_faturas():
     periodo = "JUL-2021"
     distribuidora = "EDP ES"
     tarifas_url = f"http://localhost:5000/api/seger/tarifas?periodo={periodo}&distribuidora={distribuidora}"
-    periodo_atualizado = "AGO-2021"
+    periodo_atualizado = "DEZ-2024"
     tarifas_url_atualizado = f"http://localhost:5000/api/seger/tarifas?periodo={periodo_atualizado}&distribuidora={distribuidora}"
     try:
         tarifas_response = requests.get(tarifas_url)
