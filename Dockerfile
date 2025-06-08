@@ -25,4 +25,5 @@ EXPOSE 5000
 
 # Comando para iniciar a aplicação Flask
 # Substitua 'app:app' se o nome da instância Flask for diferente
-CMD ["flask", "run", "--debug", "--host=0.0.0.0", "--port=5000"]
+CMD ["watchmedo", "auto-restart", "--patterns=routes.py", "--recursive", "--", "flask", "run", "--debug", "--host=0.0.0.0", "--port=5000"]
+# CMD ["flask", "run", "--debug", "--host=0.0.0.0", "--port=5000"]

@@ -3,9 +3,11 @@ python-dotenv
 flask
 requests
 PyPDF2>=3.0.0
+pdfplumber
 google-genai>=0.8.0
 pandas
 openpyxl
 scipy
 matplotlib
 numpy
+watchdog

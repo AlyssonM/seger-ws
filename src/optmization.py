@@ -7,9 +7,9 @@ import matplotlib.ticker as mtick
 from mpl_toolkits.mplot3d import Axes3D
 from src.utils.tarifas import calcular_tarifa_verde, calcular_tarifa_azul
 
-def opt_tarifa_verde(dados, tarifas):
+def opt_tarifa_verde(dados, tarifas, tarifa_ere):
     resultado = minimize_scalar(
-        lambda d: calcular_tarifa_verde(dados, tarifas, d),
+        lambda d: calcular_tarifa_verde(dados, tarifas, tarifa_ere, d)[0],
         bounds=(30, 600),
         method='bounded'
     )
@@ -42,7 +42,7 @@ def opt_tarifa_verde(dados, tarifas):
         "custo_otimo": custo_otimo
     }
     demanda_range = np.linspace(100, 1000, 50)
-    custos_verde = [calcular_tarifa_verde(dados, tarifas, d) for d in demanda_range]
+    custos_verde = [calcular_tarifa_verde(dados, tarifas, tarifa_ere, d)[0] for d in demanda_range]
     plt.figure(figsize=(10, 6))
     plt.plot(demanda_range,custos_verde, label='Custo Total', color='green')
     plt.axvline(demanda_otima, color='red', linestyle='--', label=f'Demanda ótima: {demanda_otima} kW')
@@ -57,9 +57,9 @@ def opt_tarifa_verde(dados, tarifas):
     return result
 
 
-def opt_tarifa_azul(dados, tarifas):
+def opt_tarifa_azul(dados, tarifas, tarifa_ere):
     resultado = minimize(
-        lambda dm: calcular_tarifa_azul(dados, tarifas, dm),
+        lambda dm: calcular_tarifa_azul(dados, tarifas, tarifa_ere, dm)[0],
         x0=[100, 100],
         bounds=[(30, 1000), (30, 1000)], 
         method='Powell'
@@ -78,7 +78,7 @@ def opt_tarifa_azul(dados, tarifas):
     y = np.linspace(30, 600, 50)  # Demanda fora de ponta
     X, Y = np.meshgrid(x, y)
     Z = np.array([
-        [calcular_tarifa_azul(dados, tarifas, [dp, dfp]) for dp in x]
+        [calcular_tarifa_azul(dados, tarifas, tarifa_ere, [dp, dfp])[0] for dp in x]
         for dfp in y
     ])
 

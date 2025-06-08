@@ -1,4 +1,7 @@
 import pandas as pd
+import logging
+import datetime
+import re
 
 # Carrega a planilha uma única vez
 _tarifas_df = pd.read_excel("./src/data/dadosTarifasANEEL.xlsx", sheet_name="Export")
@@ -8,8 +11,11 @@ def get_tarifas_filtradas(
     distribuidora: str, 
     modalidade: str = None, 
     subgrupo: str = None, 
-    detalhe: str = "Não se aplica"
+    classe: str = None,
+    detalhe: str = None
     ):
+
+    # logging.info(f"get_tarifas_filtradas(mes_ano={mes_ano}, distribuidora={distribuidora}, modalidade={modalidade}, subgrupo={subgrupo}, classe={classe}, detalhe={detalhe})")
     """
     Filtra os dados tarifários com base no mês/ano (ex: JAN-2025), distribuidora, modalidade e subgrupo.
     Apenas linhas com "Base Tarifária" = "Tarifa de Aplicação" são consideradas.
@@ -34,34 +40,53 @@ def get_tarifas_filtradas(
     except Exception:
         return {"error": f"Formato inválido para o período: {mes_ano}. Use EX: JAN-2025"}
         
-    df = _tarifas_df.copy()
+    try:
+        df = _tarifas_df.copy()
 
-    df = df[df["Sigla"].fillna("").str.upper().str.contains(distribuidora.strip().upper())]
+        # Filtro por distribuidora
+        distribuidora_pattern = re.escape(distribuidora.strip().upper())
+        df = df[df["Sigla"].fillna("").str.upper().str.contains(distribuidora_pattern, na=False, regex=True)]
 
-    df = df[
-        (pd.to_datetime(df["Início Vigência"]) <= data_fim) &
-        (pd.to_datetime(df["Fim Vigência"]) >= data_inicio)
-    ]
+        # Filtro por vigência
+        df = df[
+            (pd.to_datetime(df["Início Vigência"], errors="coerce") <= data_fim) &
+            (pd.to_datetime(df["Fim Vigência"], errors="coerce") >= data_inicio)
+        ]
 
-    df = df[df["Base Tarifária"].fillna("").str.upper() == "TARIFA DE APLICAÇÃO"]
+        # Base Tarifária
+        df = df[df["Base Tarifária"].fillna("").str.upper().str.strip() == "TARIFA DE APLICAÇÃO"]
 
-    if modalidade:
-        df = df[df["Modalidade"].fillna("").str.upper() == modalidade.strip().upper()]
+        # Modalidade
+        if modalidade:
+            pattern = re.escape(modalidade.strip().upper())
+            df = df[df["Modalidade"].fillna("").str.upper().str.contains(pattern, na=False, regex=True)]
 
-    if subgrupo:
-        df = df[df["Subgrupo"].fillna("").str.upper() == subgrupo.strip().upper()]
+        # Subgrupo
+        if subgrupo:
+            pattern = re.escape(subgrupo.strip().upper())
+            df = df[df["Subgrupo"].fillna("").str.upper().str.contains(pattern, na=False, regex=True)]
 
-    if detalhe:
-        df = df[df["Detalhe"].fillna("").str.upper() == detalhe.strip().upper()]
+        # Classe
+        if classe:
+            pattern = re.escape(classe.strip().upper())
+            df = df[df["Classe"].fillna("").str.upper().str.contains(pattern, na=False, regex=True)]
 
-    if df.empty:
-        return None
+        # Detalhe
+        if detalhe:
+            pattern = re.escape(detalhe.strip().upper())
+            df = df[df["Detalhe"].fillna("").str.upper().str.contains(pattern, na=False, regex=True)]
 
-    return df.to_dict(orient="records")
+        if df.empty:
+            return None
 
-def calcular_tarifa_verde(fatura_dados, tarifas, demanda_contratada):
+        return df.to_dict(orient="records")
+
+    except Exception as e:
+        return {"error": f"Erro ao filtrar dados: {e}"}
+
+def calcular_tarifa_verde(fatura_dados, tarifas, tarifa_ere, demanda_contratada):
     fatura_total = 0
-
+    faturas_mensais = []
     # ---------- Cálculo das médias de impostos ---------- #
     pis_total = 0.0
     cofins_total = 0.0
@@ -95,45 +120,69 @@ def calcular_tarifa_verde(fatura_dados, tarifas, demanda_contratada):
     icms_aliq = icms_media
 
     for dados in fatura_dados:
+        # logging.info(f"Mes: {dados['identificacao']['mes_referencia']}")
         consumo = dados["consumo_ativo"]
         demanda = dados["demanda"]
+        energia_reativa_ere = dados["energia_reativa"]
         energia_injetada = consumo.get("energia_injetada_kwh", 0.0)
+        extras = dados["componentes_extras"]
 
         # Tarifas
         tusd_fp = float(tarifas["TUSDforaPonta"])
         tusd_p = float(tarifas["TUSDponta"])
         te_fp = float(tarifas["TEforaPonta"])
         te_p = float(tarifas["TEponta"])
+    
         demanda_fp_tarifa = float(tarifas["DemandaForaPonta"])  # mesma para ponta e fora
-
-        energia_fp = max(0, consumo["fora_ponta_kwh"] - energia_injetada) * (tusd_fp + te_fp)
+        # # logging.info(f"SCEE = {energia_injetada}")
+        energia_fp = consumo["fora_ponta_kwh"] * (tusd_fp + te_fp)
         energia_p = consumo["ponta_kwh"] * (tusd_p + te_p)
-
+        energia_compensada = energia_injetada * (tusd_fp + te_fp)
+        energia_reativa_ex = tarifa_ere * energia_reativa_ere["excedente"]["total_kwh"]
         energia_total = energia_fp + energia_p
+        # logging.info(f"custo energia fp: {energia_fp}")
+        # logging.info(f"custo energia p: {energia_p}")
+        # logging.info(f"custo energia compensada: {energia_compensada}")
+        # logging.info(f"custo energia reativa excedente: {energia_reativa_ex}")
         Ultrapassagem = 0
         Demanda = 0
-        if demanda_contratada is None:
-            demanda_contratada = demanda["contratada_kw"]
-        maxima = demanda.get("maxima", [])
-        demanda_max_ponta = next((d["valor_kw"] for d in maxima if d.get("periodo") == "ponta"), 0.0)
-        demanda_max_fora_ponta = next((d["valor_kw"] for d in maxima if d.get("periodo") == "fora_ponta"), 0.0)
-        demanda_max = max(demanda_max_ponta, demanda_max_fora_ponta)
-        if demanda_max > demanda_contratada:
-            Ultrapassagem = demanda_max - demanda_contratada
-            Demanda = demanda_max
+        if consumo["energia_injetada_kwh"]:
+            demanda_max = demanda["fora_ponta_kw"]
+            demanda_contratada = float(demanda["contratada_kw"])
+            # logging.info(f"demanda contratada: {demanda_contratada}")
+            # logging.info(f"demanda fora ponta: {demanda_max}")
+            if demanda_max > demanda_contratada and demanda_max/demanda_contratada > 1.05:
+                Ultrapassagem = demanda_max - demanda_contratada
+                Demanda = demanda_max
+            else:
+                Ultrapassagem = 0
+                Demanda = demanda_contratada
         else:
-            Ultrapassagem = 0
-            Demanda = demanda_contratada
+            if demanda_contratada is None:
+                demanda_contratada = float(demanda["contratada_kw"])
+            maxima = demanda.get("maxima", [])
+            demanda_max_ponta = next((d["valor_kw"] for d in maxima if d.get("periodo") == "ponta"), 0.0)
+            demanda_max_fora_ponta = next((d["valor_kw"] for d in maxima if d.get("periodo") == "fora_ponta"), 0.0)
+            demanda_max = max(demanda_max_ponta, demanda_max_fora_ponta)
+            # logging.info(f"demanda contratada: {demanda_contratada}")
+            # logging.info(f"demanda fora ponta: {demanda_max}")
+            if demanda_max > demanda_contratada and demanda_max/demanda_contratada > 1.05:
+                Ultrapassagem = demanda_max - demanda_contratada
+                Demanda = demanda_max
+            else:
+                Ultrapassagem = 0
+                if demanda_max > demanda_contratada:
+                    Demanda = demanda_max
+                else:
+                    Demanda = demanda_contratada
 
-        # if demanda["fora_ponta_kw"] > demanda_contratada:
-        #     Ultrapassagem = demanda["fora_ponta_kw"] - demanda_contratada
-        #     Demanda = demanda["fora_ponta_kw"]
-        # else:
-        #     Ultrapassagem = 0
-        #     Demanda = demanda_contratada
         
-        demanda_total = Demanda * demanda_fp_tarifa + Ultrapassagem*demanda_fp_tarifa*2
-
+        custo_demanda_fp = Demanda * demanda_fp_tarifa
+        custo_ultrapassagem = Ultrapassagem * demanda_fp_tarifa * 2
+        demanda_total = custo_demanda_fp + custo_ultrapassagem
+        # logging.info(f"custo demanda fp: {custo_demanda_fp}")
+        # logging.info(f"custo ultrapassagem: {custo_ultrapassagem}")
+        # logging.info(f"custo demanda: {demanda_total}")
         # Extras
         iluminacao = next(
             (c["valor_total"] for c in dados["componentes_extras"]
@@ -145,32 +194,63 @@ def calcular_tarifa_verde(fatura_dados, tarifas, demanda_contratada):
         # cofins = next((imp["aliquota"] for imp in dados.get("impostos", []) if imp["nome"] == "COFINS"), 0.0)/100
         bandeira = sum([c["valor_total"] for c in dados["componentes_extras"] if "bandeira" in c["descricao"].lower()])
         
-        bandeira_liquido = bandeira - bandeira * (pis_aliq + cofins_aliq) / 100
+        bandeira_impostos = sum(
+            c.get("valor_impostos", 0.0) or 0.0
+            for c in dados["componentes_extras"]
+            if "bandeira" in c.get("descricao", "").lower()
+        )
+        bandeira_liquido = bandeira - bandeira_impostos  #bandeira * (pis_aliq + cofins_aliq) / 100
         
         extras = [
             {"descricao": c["descricao"], "valor_total": c["valor_total"]}
             for c in dados["componentes_extras"]
             if c["valor_total"] not in [bandeira, iluminacao]
         ]
+        # logging.info(f"custo iluminacao: {iluminacao}")
+        # logging.info(f"custo bandeira: {bandeira_liquido}")
 
-        total_sem_imposto = energia_total + demanda_total + bandeira_liquido
-        fatura_total += total_sem_imposto/(1 - (pis_aliq + cofins_aliq)/100) + iluminacao
+        irrf_demanda = 0
+        
+        if consumo["energia_injetada_kwh"]:
+            irrf_demanda = (demanda_total * 4.8/100)/(1 - (pis_aliq + cofins_aliq)/100)
+        total_sem_imposto = energia_total + demanda_total + bandeira_liquido - energia_compensada + energia_reativa_ex
+        # # logging.info(f"custo total sem imposto: {total_sem_imposto}")
+        # # logging.info(f"pis:{pis_aliq} cofins:{cofins_aliq}")
 
-    return round(fatura_total,2)
-    # return {
-    #     "total_sem_imposto": round(total_sem_imposto, 2),
-    #     "energia_ativa": round(energia_total, 2),
-    #     "demanda": round(demanda_total, 2),
-    #     "bandeira": round(bandeira_liquido, 2),
-    #     "iluminacao_publica": round(iluminacao, 2),
-    #     "componentes_extras": extras,
-    #     "fatura_total": round(fatura_total,2)
-    # }
+        # irrf_comp = next((c["valor_impostos"] for c in dados["componentes_extras"] if ("imposto de renda" or "Demanda Imposto Renda") in c["descricao"].lower()), 0.0)
+        irrf_comp = sum(
+            c.get("valor_impostos", 0.0) or 0.0
+            for c in dados["componentes_extras"]
+            if any(
+                termo in c.get("descricao", "").lower()
+                for termo in ["imposto de renda", "demanda imposto renda"]
+            )
+        )
+        juros = next((c["valor_total"] for c in dados["componentes_extras"] if "juros" in c["descricao"].lower()), 0.0)
+        multa = next((c["valor_total"] for c in dados["componentes_extras"] if "multa" in c["descricao"].lower()), 0.0)
 
-def calcular_tarifa_azul(fatura_dados, tarifas, dm):
+        # logging.info(f"Juros: {juros}, Multa: {multa}")
+        # logging.info(f"custo imposto de renda: {irrf_comp}")
+        fatura_mes = (total_sem_imposto / (1 - (pis_aliq + cofins_aliq) / 100)
+            + iluminacao
+            - irrf_demanda*0
+            + irrf_comp
+            + juros
+            + multa
+        )
+        # logging.info(f"fatura mes {dados['identificacao']['mes_referencia']}: {fatura_mes}")
+        fatura_total += fatura_mes
+        faturas_mensais.append({
+            "mes": dados["identificacao"].get("mes_referencia", "N/A"),
+            "valor_fatura": round(fatura_mes, 2)
+        })
+        
+    return round(fatura_total,2),faturas_mensais
+
+def calcular_tarifa_azul(fatura_dados, tarifas, tarifa_ere, dm):
     demanda_p, demanda_fp = dm
     fatura_total = 0
-
+    faturas_mensais = []
     # ---------- Cálculo das médias de impostos ---------- #
     pis_total = 0.0
     cofins_total = 0.0
@@ -203,11 +283,15 @@ def calcular_tarifa_azul(fatura_dados, tarifas, dm):
     cofins_aliq = cofins_media
     icms_aliq = icms_media
 
+    # logging.info(f"pis:{pis_aliq} cofins:{cofins_aliq}")
+
     for dados in fatura_dados:
+        # logging.info(f"Mes: {dados['identificacao']['mes_referencia']}")
         consumo = dados["consumo_ativo"]
         demanda = dados["demanda"]
+        energia_reativa_ere = dados["energia_reativa"]
         energia_injetada = consumo.get("energia_injetada_kwh", 0.0)
-
+        
         # Tarifas
         tusd_fp = float(tarifas["TUSDforaPonta"])
         tusd_p = float(tarifas["TUSDponta"])
@@ -216,9 +300,14 @@ def calcular_tarifa_azul(fatura_dados, tarifas, dm):
         demanda_fp_tarifa = float(tarifas["DemandaForaPonta"])
         demanda_p_tarifa = float(tarifas["DemandaPonta"])
 
-        energia_fp = max(0, consumo["fora_ponta_kwh"] - energia_injetada) * (tusd_fp + te_fp)
+        energia_fp = consumo["fora_ponta_kwh"] * (tusd_fp + te_fp)
         energia_p = consumo["ponta_kwh"] * (tusd_p + te_p)
-
+        energia_compensada = energia_injetada * (tusd_fp + te_fp)
+        energia_reativa_ex = tarifa_ere * energia_reativa_ere["excedente"]["total_kwh"]
+        # logging.info(f"custo energia fp: {energia_fp}")
+        # logging.info(f"custo energia p: {energia_p}")
+        # logging.info(f"custo energia reativa excedente: {energia_reativa_ex}")
+        # logging.info(f"custo energia compensada: {energia_compensada}")
         energia_total = energia_fp + energia_p
         Ultrapassagem_ponta = 0
         Ultrapassagem_fora_ponta = 0
@@ -228,22 +317,35 @@ def calcular_tarifa_azul(fatura_dados, tarifas, dm):
         demanda_max_ponta = next((d["valor_kw"] for d in maxima if d.get("periodo") == "ponta"), 0.0)
         demanda_max_fora_ponta = next((d["valor_kw"] for d in maxima if d.get("periodo") == "fora_ponta"), 0.0)
 
-        if demanda_max_fora_ponta > demanda_fp:
+        if demanda_max_fora_ponta > demanda_fp and demanda_max_fora_ponta/demanda_fp > 1.05:
             Ultrapassagem_fora_ponta = demanda_max_fora_ponta - demanda_fp
             Demanda_fora_ponta = demanda_max_fora_ponta
         else:
             Ultrapassagem_fora_ponta = 0
-            Demanda_fora_ponta = demanda_fp
-
-        if demanda_max_ponta > demanda_p:
+            if demanda_max_fora_ponta > demanda_fp:
+                Demanda_fora_ponta = demanda_max_fora_ponta
+            else:
+                Demanda_fora_ponta = demanda_fp
+            
+        if demanda_max_ponta > demanda_p and demanda_max_ponta/demanda_p > 1.05:
             Ultrapassagem_ponta = demanda_max_ponta - demanda_p
             Demanda_ponta = demanda_max_ponta
         else:
             Ultrapassagem_ponta = 0
-            Demanda_ponta = demanda_p
+            if demanda_max_ponta > demanda_p:
+                Demanda_ponta = demanda_max_ponta
+            else:
+                Demanda_ponta = demanda_p
+            
 
-        demanda_total = Demanda_fora_ponta*demanda_fp_tarifa + Ultrapassagem_fora_ponta*demanda_fp_tarifa*2 + Demanda_ponta*demanda_p_tarifa + Ultrapassagem_ponta*demanda_p_tarifa*2
-
+        custo_demanda_fp = Demanda_fora_ponta*demanda_fp_tarifa
+        custo_demanda_p = Demanda_ponta*demanda_p_tarifa
+        custo_ultrapassagem = Ultrapassagem_fora_ponta*demanda_fp_tarifa*2 + Ultrapassagem_ponta*demanda_p_tarifa*2
+        demanda_total = custo_demanda_fp + custo_demanda_p + custo_ultrapassagem  
+        # logging.info(f"custo demanda fp: {custo_demanda_fp}")
+        # logging.info(f"custo demanda p: {custo_demanda_p}")
+        # logging.info(f"custo ultrapassagem: {custo_ultrapassagem}")
+        # logging.info(f"custo demanda: {demanda_total}")
         # Extras
         iluminacao = next(
             (c["valor_total"] for c in dados["componentes_extras"]
@@ -255,30 +357,58 @@ def calcular_tarifa_azul(fatura_dados, tarifas, dm):
         # cofins = next((imp["aliquota"] for imp in dados.get("impostos", []) if imp["nome"] == "COFINS"), 0.0)/100
         
         bandeira = sum([c["valor_total"] for c in dados["componentes_extras"] if "bandeira" in c["descricao"].lower()])
-        bandeira_liquido = bandeira - bandeira * (pis_aliq + cofins_aliq) / 100
+        
+        bandeira_impostos = sum(
+            c.get("valor_impostos", 0.0) or 0.0
+            for c in dados["componentes_extras"]
+            if "bandeira" in c.get("descricao", "").lower()
+        )
+
+        bandeira_liquido = bandeira - bandeira_impostos #bandeira * (pis_aliq + cofins_aliq) / 100
+
+        # logging.info(f"custo iluminacao: {iluminacao}")
+        # logging.info(f"custo bandeira: {bandeira_liquido}")
 
         extras = [
             {"descricao": c["descricao"], "valor_total": c["valor_total"]}
             for c in dados["componentes_extras"]
             if c["valor_total"] not in [bandeira, iluminacao]
         ]
+        irrf_comp = sum(
+            c.get("valor_impostos", 0.0) or 0.0
+            for c in dados["componentes_extras"]
+            if any(
+                termo in c.get("descricao", "").lower()
+                for termo in ["imposto de renda", "demanda imposto renda"]
+            )
+        )
+        juros = next((c["valor_total"] for c in dados["componentes_extras"] if "juros" in c["descricao"].lower()), 0.0)
+        multa = next((c["valor_total"] for c in dados["componentes_extras"] if "multa" in c["descricao"].lower()), 0.0)
 
-        total_sem_imposto = energia_total + demanda_total + bandeira_liquido
-        fatura_total += total_sem_imposto/(1 - (pis_aliq + cofins_aliq)/100) + iluminacao
-        
-    return round(fatura_total,2)
-    # return {
-    #     "total_sem_imposto": round(total_sem_imposto, 2),
-    #     "energia_ativa": round(energia_total, 2),
-    #     "demanda_total": round(demanda_total, 2),
-    #     "bandeira": round(bandeira_liquido, 2),
-    #     "iluminacao_publica": round(iluminacao, 2),
-    #     "componentes_extras": extras,
-    #     "fatura_total": round(fatura_total,2)
-    # }
+        # logging.info(f"Juros: {juros}, Multa: {multa}")
+        # logging.info(f"custo imposto de renda: {irrf_comp}")
+
+        total_sem_imposto = energia_total + demanda_total + bandeira_liquido - energia_compensada + energia_reativa_ex
+        # logging.info(f"custo total sem imposto: {total_sem_imposto}")
+
+        fatura_mes = (total_sem_imposto / (1 - (pis_aliq + cofins_aliq) / 100)
+            + iluminacao
+            + irrf_comp
+            + juros
+            + multa
+        )
+        # logging.info(f"fatura mes {dados['identificacao']['mes_referencia']}: {fatura_mes}")
+        fatura_total += fatura_mes
+        faturas_mensais.append({
+            "mes": dados["identificacao"].get("mes_referencia", "N/A"),
+            "valor_fatura": round(fatura_mes, 2)
+        })
+
+    return round(fatura_total,2),faturas_mensais
 
 def calcular_tarifa_bt(fatura_dados, tarifas):
     fatura_total = 0
+    faturas_mensais = []
 
     # ---------- Cálculo das médias de impostos ---------- #
     pis_total = 0.0
@@ -335,7 +465,25 @@ def calcular_tarifa_bt(fatura_dados, tarifas):
         # pis = next((imp["aliquota"] for imp in dados.get("impostos", []) if imp["nome"] == "PIS"), 0.0)/100
         # cofins = next((imp["aliquota"] for imp in dados.get("impostos", []) if imp["nome"] == "COFINS"), 0.0)/100
         bandeira = sum([c["valor_total"] for c in dados["componentes_extras"] if "bandeira" in c["descricao"].lower()])
-        bandeira_liquido = bandeira - bandeira * (pis_aliq + cofins_aliq) / 100
+        
+        bandeira_impostos = sum(
+            c.get("valor_impostos", 0.0) or 0.0
+            for c in dados["componentes_extras"]
+            if "bandeira" in c.get("descricao", "").lower()
+        )
+
+        irrf_comp = sum(
+            c.get("valor_impostos", 0.0) or 0.0
+            for c in dados["componentes_extras"]
+            if any(
+                termo in c.get("descricao", "").lower()
+                for termo in ["imposto de renda", "demanda imposto renda"]
+            )
+        )
+        juros = next((c["valor_total"] for c in dados["componentes_extras"] if "juros" in c["descricao"].lower()), 0.0)
+        multa = next((c["valor_total"] for c in dados["componentes_extras"] if "multa" in c["descricao"].lower()), 0.0)
+
+        bandeira_liquido = bandeira - bandeira_impostos #bandeira * (pis_aliq + cofins_aliq) / 100
 
         extras = [
             {"descricao": c["descricao"], "valor_total": c["valor_total"]}
@@ -344,9 +492,22 @@ def calcular_tarifa_bt(fatura_dados, tarifas):
         ]
 
         total_sem_imposto = energia_total + bandeira_liquido
-        fatura_total += total_sem_imposto/(1 - (pis_aliq + cofins_aliq)/100) + iluminacao
+        # fatura_total += total_sem_imposto/(1 - (pis_aliq + cofins_aliq)/100) + iluminacao
 
-    return round(fatura_total,2)
+        fatura_mes = (total_sem_imposto / (1 - (pis_aliq + cofins_aliq) / 100)
+            + iluminacao
+            + irrf_comp
+            + juros
+            + multa
+        )
+        # logging.info(f"fatura mes {dados['identificacao']['mes_referencia']}: {fatura_mes}")
+        fatura_total += fatura_mes
+        faturas_mensais.append({
+            "mes": dados["identificacao"].get("mes_referencia", "N/A"),
+            "valor_fatura": round(fatura_mes, 2)
+        })
+
+    return round(fatura_total,2),faturas_mensais
 
 def extrair_tarifa_compacta_por_modalidade(lista_tarifas):
     resultado = {}
@@ -401,6 +562,11 @@ def extrair_tarifa_compacta_por_modalidade(lista_tarifas):
                     r["TUSDponta"] = tusd
 
         elif modalidade == "convencional":
+            if unidade == "r$/mwh":
+                r["TEforaPonta"] = te
+                r["TUSDforaPonta"] = tusd
+        
+        elif modalidade == "convencional pré-pagamento":
             if unidade == "r$/mwh":
                 r["TEforaPonta"] = te
                 r["TUSDforaPonta"] = tusd

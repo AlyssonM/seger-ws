@@ -2,6 +2,7 @@
 from typing import Any, Dict, List, Optional
 import os, json
 import PyPDF2
+import pdfplumber
 from google import genai
 from google.genai import types
 from src.parser_regex import extrair_dados_completos_da_fatura_regex
@@ -18,6 +19,14 @@ def _extrair_texto_pdf(pdf_path: str) -> str:
         reader = PyPDF2.PdfReader(f)
         for page in reader.pages:
             texto.append(page.extract_text() or "")
+    
+    # with pdfplumber.open(pdf_path) as pdf:
+    #     for page in pdf.pages:
+    #         tables = page.extract_tables()
+    #         for table in tables:
+    #             for row in table:
+    #                 logging.info(f"Table row: {row}")
+
     return "\n".join(texto)
 
 def extrair_dados_completos_da_fatura(pdf_path: str, via_regex: bool = True) -> Dict[str, Any]:
@@ -176,7 +185,9 @@ def extrair_dados_completos_da_fatura(pdf_path: str, via_regex: bool = True) -> 
 def analisar_eficiencia_energetica(
     fatura_dados: List[Dict[str, Any]],
     tarifas,
+    tarifa_ere,
     tarifas_atualizado,
+    tarifa_ere_atualizado,
     demanda_verde_otima,
     demanda_azul_p_otima,
     demanda_azul_fp_otima
@@ -225,7 +236,7 @@ def analisar_eficiencia_energetica(
             "consumo_fora_ponta": consumo_fp,
             "demanda_ponta": demanda(t.get("DemandaPonta", 0.0)) if grupo == "A AZUL A4" else "-",
             "demanda_fora": demanda(t.get("DemandaForaPonta", 0.0)) if grupo != "BT Optante B3" else "-",
-            "ere": "0,27926",
+            "ere": str(tarifa_ere),
             "pis": f"{pis_aliq:.2f}".replace('.', ','),
             "cofins": f"{cofins_aliq:.2f}".replace('.', ','),
             "icms": f"{icms_aliq:.2f}".replace('.', ',')
@@ -247,14 +258,16 @@ def analisar_eficiencia_energetica(
         consumo = f.get("consumo_ativo", {})
         demanda = f.get("demanda", {})
         ere = _pega_componente(f, "ere") or {"valor_total": 0.0}
+        dmax_fponta = next((d["valor_kw"] for d in demanda.get("maxima", []) if d["periodo"] == "fora_ponta"), 0.0)
+        dmax_ponta = next((d["valor_kw"] for d in demanda.get("maxima", []) if d["periodo"] == "ponta"), 0.0)
         dmcr_ponta = next((d["valor_kw"] for d in demanda.get("dmcr", []) if d["periodo"] == "ponta"), 0.0)
         dmcr_fora = next((d["valor_kw"] for d in demanda.get("dmcr", []) if d["periodo"] == "fora_ponta"), demanda.get("fora_ponta_kw", 0.0))
         valor = f.get("valores_totais", {}).get("valor_total_fatura", 0.0)
 
         res["tabela_consumo"].append({
             "data": mes.lower().replace("/20", "/")[0:3] + mes[-2:],
-            "demanda_ponta": formatar(dmcr_ponta),
-            "demanda_fora_ponta": formatar(dmcr_fora),
+            "demanda_ponta": formatar(dmax_ponta),
+            "demanda_fora_ponta": formatar(dmax_fponta),
             "energia_ponta": formatar(consumo.get("ponta_kwh", 0.0)),
             "energia_fora_ponta": formatar(consumo.get("fora_ponta_kwh", 0.0)),
             "energia_injetada": formatar(consumo.get("energia_injetada_kwh",0.0)),
@@ -273,10 +286,10 @@ def analisar_eficiencia_energetica(
         calcular_tabela_contrato_proposto
     )
 
-    res["tabela_12meses_otimizados"] = calcular_tabela_12meses(fatura_dados, tarifas_atualizado, demanda_verde_otima, demanda_azul_p_otima, demanda_azul_fp_otima)
-    res["tabela_ajuste"] = calcular_tabela_ajuste(fatura_dados, tarifas_atualizado)
-    res["tabela_contrato_comparado"], total_atual = calcular_tabela_contrato_atual(fatura_dados, tarifas_atualizado, pis_aliq, cofins_aliq, icms_aliq)
-    tabela_proposto, total_proposto = calcular_tabela_contrato_proposto(fatura_dados, tarifas_atualizado, demanda_verde_otima, pis_aliq, cofins_aliq, icms_aliq)
+    res["tabela_12meses_otimizados"] = calcular_tabela_12meses(fatura_dados, tarifas_atualizado, tarifa_ere_atualizado, demanda_verde_otima, demanda_azul_p_otima, demanda_azul_fp_otima)
+    res["tabela_ajuste"] = calcular_tabela_ajuste(fatura_dados, tarifas_atualizado, tarifa_ere_atualizado)
+    res["tabela_contrato_comparado"], total_atual = calcular_tabela_contrato_atual(fatura_dados, tarifas_atualizado, tarifa_ere_atualizado, pis_aliq, cofins_aliq, icms_aliq)
+    tabela_proposto, total_proposto = calcular_tabela_contrato_proposto(fatura_dados, tarifas_atualizado, tarifa_ere_atualizado, demanda_verde_otima, pis_aliq, cofins_aliq, icms_aliq)
     res["tabela_contrato_comparado"] += tabela_proposto
     # --- Ajustes finais ---
     try:

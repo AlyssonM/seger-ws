@@ -109,7 +109,7 @@ def extrair_dados_completos_da_fatura_regex(texto: str) -> Dict[str, Any]:
     }
     
     identificacao = {}
-    logging.info("Extraindo endereço...")
+    # logging.info("Extraindo endereço...")
     # Endereço
 
     lines = texto.splitlines()
@@ -156,7 +156,7 @@ def extrair_dados_completos_da_fatura_regex(texto: str) -> Dict[str, Any]:
         identificacao["endereco"] = "N/A"
 
     # Tensão nominal e unidade
-    logging.info("Extraindo Tensão nominal...")
+    # logging.info("Extraindo Tensão nominal...")
     tensao_match = re.search(r"\b(\d{1,3}[.,]?\d{0,3})\s*V\b", texto)
     if tensao_match:
         tensao_val = tensao_match.group(1).replace(",", ".")
@@ -173,7 +173,7 @@ def extrair_dados_completos_da_fatura_regex(texto: str) -> Dict[str, Any]:
             identificacao["nivel_tensao"] = "baixa tensão"
 
     # Demais campos
-    logging.info("Extraindo demais campos de identificação...")
+    # logging.info("Extraindo demais campos de identificação...")
     identificacao.update({
         # Número da instalação (ex: 0009500016)
         "numero_instalacao": _find(r"\b(\d{10})PAG\b", texto),
@@ -209,7 +209,7 @@ def extrair_dados_completos_da_fatura_regex(texto: str) -> Dict[str, Any]:
     out["identificacao"] = {k: v for k, v in identificacao.items() if v}
 
     # ---------- LEITURAS ----------
-    logging.info("Extraindo informações das leituras...")
+    # logging.info("Extraindo informações das leituras...")
     out["leituras"] = {}
     if (m := re.search(r"Roteiro de leitura:.*?:\s*([0-3]\d/\d{2}/\d{4})\s*a\s*([0-3]\d/\d{2}/\d{4})", texto)):
         out["leituras"]["leitura_inicio"], out["leituras"]["leitura_fim"] = m.groups()
@@ -222,7 +222,7 @@ def extrair_dados_completos_da_fatura_regex(texto: str) -> Dict[str, Any]:
         rf"(?:TUSD\s*-\s*.*?Fornecida\s+Ponta|Consumo\s+Ativo\s+Ponta)\s+kWh\s+({NUMBER})",
         texto, re.I
     )
-    logging.info(f"match energia Ponta: {m}")
+    # logging.info(f"match energia Ponta: {m}")
     if m:
         out["consumo_ativo"]["ponta_kwh"] = _clean_num(m.group(1))
 
@@ -231,7 +231,7 @@ def extrair_dados_completos_da_fatura_regex(texto: str) -> Dict[str, Any]:
         rf"(?:TUSD\s*-\s*.*?Fornecida\s+(?:Fora\s+Ponta|FPonta)|(?:TUSD\s*-\s*)?Cons\s+Ativo\s+(?:Fora\s+Ponta|FPonta))\s+kWh\s+({NUMBER})",
         texto, re.I
     )
-    logging.info(f"match energia Fora Ponta: {m}")
+    # logging.info(f"match energia Fora Ponta: {m}")
     if m:
         out["consumo_ativo"]["fora_ponta_kwh"] = _clean_num(m.group(1))
 
@@ -240,11 +240,13 @@ def extrair_dados_completos_da_fatura_regex(texto: str) -> Dict[str, Any]:
         rf"(?:Inj\.\w+|Injetada)[^\n]*?\s({DECIMAL})\s+KWH",
         texto, re.I
     )
-    logging.info(f"match energia injetada: {m}")
+    # logging.info(f"match energia injetada: {m}")
     if m:
         energia_injetada = _clean_num(m.group(1))
-        logging.info(f"energia injetada: {energia_injetada}")
+        # logging.info(f"energia injetada: {energia_injetada}")
         out["consumo_ativo"]["energia_injetada_kwh"] = energia_injetada
+    else:
+        out["consumo_ativo"]["energia_injetada_kwh"] = 0.0
 
     # Total
     if "ponta_kwh" in out["consumo_ativo"] and "fora_ponta_kwh" in out["consumo_ativo"]:
@@ -256,6 +258,7 @@ def extrair_dados_completos_da_fatura_regex(texto: str) -> Dict[str, Any]:
     # ---------- DEMANDA ---------- 
     contrat_pat = rf"Demanda\s+Contratual[- ]KW\s+({NUMBER})"
     out.setdefault("demanda", {})["contratada_kw"] = _clean_num(_find(contrat_pat, texto, re.I))
+
 
     # ---------- DEMANDA MÁXIMA (leitura) ----------
     # aceita “Máx” ou “Máxima”
@@ -299,6 +302,34 @@ def extrair_dados_completos_da_fatura_regex(texto: str) -> Dict[str, Any]:
             "valor_kw": _clean_num(qtd)
         })
 
+    # ---------- DEMANDA (Ponta e Fora Ponta) extraída da tabela horizontal ----------
+    demanda_tabela_pat = rf"""
+        Demanda\s*             # Título da seção
+        Ponta\s+Fora\s+Ponta   # Subtítulos
+        ({NUMBER})\s+({NUMBER})
+    """
+    match = re.search(demanda_tabela_pat, texto, re.I | re.X)
+    if match:
+        demanda_ponta = _clean_num(match.group(1))
+        demanda_fora = _clean_num(match.group(2))
+        out.setdefault("demanda", {})["ponta_kw"] = demanda_ponta
+        out.setdefault("demanda", {})["fora_ponta_kw"] = demanda_fora
+
+    # ---------- DEMANDA REATIVA EXCEDENTE (DRE) ----------
+    dre_pat = rf"""
+        Dem\.?\s+Reat\.?\s+Excedente\s*    # Título da seção
+        Ponta\s+Fora\s+Ponta\s*            # Subtítulos
+        ({NUMBER})\s+({NUMBER})            # Valores numéricos
+    """
+    match = re.search(dre_pat, texto, re.I | re.X)
+    if match:
+        dre_ponta = _clean_num(match.group(1))
+        dre_fora_ponta = _clean_num(match.group(2))
+        out.setdefault("energia_reativa", {})["dre"] = {
+            "ponta_kvarh": dre_ponta,
+            "fora_ponta_kvarh": dre_fora_ponta
+        }
+        
     # ---------- DEMANDA (custos)  -----------------------------------
     # procura a primeira linha que contenha "Demanda" + 3 números
     for ln in texto.splitlines():
@@ -337,8 +368,9 @@ def extrair_dados_completos_da_fatura_regex(texto: str) -> Dict[str, Any]:
 
     out["energia_reativa"] = {k: v for k, v in er.items() if v not in (None, {}, [])}
 
+    
     # ---------- IMPOSTOS ----------
-    logging.info("Extraindo informações sobre impostos...")
+    # logging.info("Extraindo informações sobre impostos...")
     
     impostos_dict = {}
     for valor, aliq, base, nome in _findall(rf"({NUMBER})\s+({NUMBER})\s+({NUMBER})\s+(PIS|COFINS|ICMS)", texto, re.I):
@@ -355,7 +387,7 @@ def extrair_dados_completos_da_fatura_regex(texto: str) -> Dict[str, Any]:
     out["impostos"] = list(impostos_dict.values())
 
     # ---------- TARIFAS ----------
-    logging.info("Extraindo informações sobre tarifas...")
+    # logging.info("Extraindo informações sobre tarifas...")
     tarifas = []
     tarifa_pat = (r"(TUSD|TE)\s*-\s*Cons(?:\w+)?\s+Ativo\s+"
                   r"(Ponta|FPonta|Fora\s+Ponta)\s+kWh\s+"
@@ -379,23 +411,35 @@ def extrair_dados_completos_da_fatura_regex(texto: str) -> Dict[str, Any]:
         }
 
     # ---------- COMPONENTES EXTRAS (opcionais) ----------
-    logging.info("Extraindo informações sobre componentes extras...")
+    # logging.info("Extraindo informações sobre componentes extras...")
     extras = []
 
+    # extra_pat = rf"""
+    # (?P<descricao>
+    #     Demanda\s+Não\s+Utilizada |
+    #     Demanda\s+Ultrapassagem  |
+    #     Tarifa\s+Postal |
+    #     ERE(?:-|\s)Energia\s+Reativa\s+Excedente |
+    #     Adicional\s+Bandeira\s+(?:Vermelha|Amarela|Verde)? |
+    #     Contribuição\s+de\s+Ilum(?:\.|inação)?\s+Pública(?:\s+-\s+Lei\s+Municipal)?
+    # )
+    # \s+\w*\s+({NUMBER})\s+({NUMBER})\s+({NUMBER})(?:\s+({NUMBER}))?
+    # """
     extra_pat = rf"""
-    (?P<descricao>
-        Demanda\s+Não\s+Utilizada |
-        Demanda\s+Ultrapassagem  |
-        Tarifa\s+Postal |
-        ERE(?:-|\s)Energia\s+Reativa\s+Excedente |
-        Adicional\s+Bandeira\s+(?:Vermelha|Amarela|Verde)? |
-        Contribuição\s+de\s+Ilum(?:\.|inação)?\s+Pública(?:\s+-\s+Lei\s+Municipal)?
-    )
-    \s+\w*\s+({NUMBER})\s+({NUMBER})\s+({NUMBER})(?:\s+({NUMBER}))?
+        (?P<descricao>
+            Demanda\s+Não\s+Utilizada |
+            Demanda\s+Ultrapassagem  |
+            Tarifa\s+Postal |
+            ERE(?:-|\s)Energia\s+Reativa\s+Excedente |
+            Adicional\s+Bandeira\s+(?:Vermelha|Amarela|Verde)\s*\d* |
+            Contribuição\s+de\s+Ilum(?:\.|inação)?\s+Pública(?:\s+-\s+Lei\s+Municipal)?
+        )
+        \s+\w*\s+({NUMBER})\s+({NUMBER})\s+({NUMBER})\s+({NUMBER})?
     """
 
     for match in re.finditer(extra_pat, texto, re.I | re.X):
         nome, qtd, tarifa, valor, imposto = match.groups()
+        # logging.info(f"Extração: {nome}")
         if nome.strip() == "Contribuição de Ilum. Pública - Lei Municipal":
             extras.append({
             "descricao": nome.strip(),
@@ -413,11 +457,41 @@ def extrair_dados_completos_da_fatura_regex(texto: str) -> Dict[str, Any]:
                 "valor_impostos": _clean_num(imposto) 
             })
 
+    retencao_pat = rf"""
+        (?P<descricao>
+            Retenção\s+Demanda\s+Imposto\s+Renda |
+            Retenção\s+Imposto\s+de\s+Renda
+        )
+        \s+\w*\s+({DECIMAL})\s+({DECIMAL})
+    """
+    for match in re.finditer(retencao_pat, texto, re.I | re.X):
+        nome, valor, imposto = match.groups()
+        extras.append({
+            "descricao": nome.strip(),
+            "valor_total": _clean_num(valor),
+            "valor_impostos": _clean_num(imposto)
+        })
+
+    multa_pat = rf"""
+        (?P<descricao>
+            Juros\s+de\s+Mora\s+Ref[.:]?\s*\w* |
+            Multa\s+Ref[.:]?\s*\w*
+        )
+        .*?                                  # ignora unidade e quantidade
+        ({DECIMAL})\s+({DECIMAL})
+    """
+    for match in re.finditer(multa_pat, texto, re.I | re.X):
+        nome, valor, multa = match.groups()
+        extras.append({
+            "descricao": nome.strip(),
+            "valor_total": _clean_num(multa)
+        })
+
     # if extras:
     #     out["componentes_extras"] = extras
     out["componentes_extras"] = extras
 
-    # logging.info(f"Extrações: {out}")
+    logging.info(f"Extrações: {out}")
     return out
     # ---------- LIMPEZA ----------
     # return {k: v for k, v in out.items() if v not in (None, {}, [], "")}
