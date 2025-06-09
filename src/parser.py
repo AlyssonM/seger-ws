@@ -309,6 +309,12 @@ def analisar_eficiencia_energetica(
         res["ajuste_percentual"] = "-1,00"
 
     res["resumo_proposta"] = gerar_resumo_proposta(demanda_verde_otima, res["tabela_contrato_comparado"])
-    res.update(gerar_dados_contextuais_integrado(res, fatura_dados, demanda_verde_otima, demanda_azul_p_otima, demanda_azul_fp_otima))
+    ultrapassagem_ocorre = True if total_atual["ultrapassagem"] > 0 else False
+    ajuste_total = next(
+        (linha["ajuste"] for linha in res["tabela_ajuste"] if linha["mes"] == "TOTAL"),
+        0  # valor padrão caso não encontre
+    )
+    atualizado_aumento = ajuste_total > 0
+    res.update(gerar_dados_contextuais_integrado(res, fatura_dados, ultrapassagem_ocorre, atualizado_aumento, demanda_verde_otima, demanda_azul_p_otima, demanda_azul_fp_otima))
 
     return res

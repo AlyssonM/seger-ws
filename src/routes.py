@@ -356,7 +356,7 @@ def analisar_faturas():
         }	
         response = requests.post(relatorio_url, json=analise_resultado, headers=headers)
         if response.status_code == 200:
-            with open("/app/src/data/relatorio_gerado.pdf", "wb") as f:
+            with open(f"/app/src/data/relatorio_uc_{codinstalacao}.pdf", "wb") as f:
                 f.write(response.content)
             logging.info("✅ PDF salvo com sucesso: relatorio_gerado.pdf")
         else:

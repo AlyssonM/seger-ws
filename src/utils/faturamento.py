@@ -66,7 +66,7 @@ def gerar_resumo_proposta(
         {"titulo": "Economia em relação à Atual", "atual": "-", "proposto": f"(R\\$ {formatar(economia)}/ano)"}
     ]
 
-def gerar_dados_contextuais_integrado(res, fatura_dados, demanda_verde_otima, demanda_azul_p, demanda_azul_fp):
+def gerar_dados_contextuais_integrado(res, fatura_dados, ultrapassagem_ocorre, atualizado_aumento, demanda_verde_otima, demanda_azul_p, demanda_azul_fp):
     atual = next((x for x in res["tabela_contrato_comparado"] if "ATUAL" in x["data"]), {})
     proposto = next((x for x in res["tabela_contrato_comparado"] if "PROPOSTO" in x["data"]), {})
 
@@ -79,7 +79,7 @@ def gerar_dados_contextuais_integrado(res, fatura_dados, demanda_verde_otima, de
 
     dados_meta = {
         "Unidade": ident.get("unidade", ""),
-        "Autores": "Alysson Machado",
+        "Autores": "Alysson Machado \\\ Helder Rocha \\\ Lohane \\\ Jules Carneiro \\\ Lohane Palaoro \\\ Luiz Virgílio Aranda \\\ Rodrigo Fiorotti \\\ Marcelo Segatto",
         "data": date.today().strftime("%d-%m-%Y"),
         "Endereco": ident.get("endereco", "rua A."),
         "NivelTensao": ident.get("nivel_tensao", "média tensão" if grupo == "A" else "baixa tensão"),
@@ -105,7 +105,11 @@ def gerar_dados_contextuais_integrado(res, fatura_dados, demanda_verde_otima, de
         "dadosAnaliseInic": ident.get("mes_referencia", "n/a"),
         "dadosAnaliseFinal": fatura_dados[-1].get("identificacao", {}).get("mes_referencia", "n/a"),
         "custoContratoAtual": atual.get("total", "0,00").replace("\\textbf{", "").replace("}", ""),
-        "custoContratoNovo": proposto.get("total", "0,00").replace("\\textbf{", "").replace("}", "")
+        "custoContratoNovo": proposto.get("total", "0,00").replace("\\textbf{", "").replace("}", ""),
+        "ultrapassagem_ocorre": ultrapassagem_ocorre,
+        "atualizado_aumento": atualizado_aumento,
+        "DemandaAzulPonta": format_kw(demanda_azul_p),
+        "DemandaAzulForaPonta": format_kw(demanda_azul_fp),
     }
 
     try:
@@ -148,33 +152,6 @@ def calcular_tabela_12meses(fatura_dados, tarifas, tarifa_ere, demanda_verde_oti
         "bt": formatar(total_bt),
     })
 
-    # for f in fatura_dados:
-    #     ident = f.get("identificacao", {})
-    #     mesref = ident.get("mes_referencia", "N/A")
-    #     mes_label = mesref.lower().replace("/20", "/")[0:3] + mesref[-2:]  # exemplo: "jul/23"
-
-    #     custo_verde = calcular_tarifa_verde([f], tarifas["verde"], tarifa_ere, demanda_verde_otima)
-    #     custo_azul = calcular_tarifa_azul([f], tarifas["azul"], tarifa_ere, [demanda_azul_p_otima, demanda_azul_fp_otima])
-    #     custo_bt = calcular_tarifa_bt([f], tarifas["convencional"])
-
-    #     total_verde += custo_verde
-    #     total_azul += custo_azul
-    #     total_bt += custo_bt
-
-    #     tabela_otimizada.append({
-    #         "data": mes_label,
-    #         "verde": formatar(custo_verde),
-    #         "azul": formatar(custo_azul),
-    #         "bt": formatar(custo_bt),
-    #     })
-
-    # tabela_otimizada.append({
-    #     "data": "TOTAL APÓS 12 MESES",
-    #     "verde": formatar(total_verde),
-    #     "azul": formatar(total_azul),
-    #     "bt": formatar(total_bt),
-    # })
-
     return tabela_otimizada
 
 def calcular_tabela_ajuste(fatura_dados, tarifas_atualizado, tarifa_ere, demanda_base=570.0):
@@ -199,21 +176,6 @@ def calcular_tabela_ajuste(fatura_dados, tarifas_atualizado, tarifa_ere, demanda
         # valor_real = f.get("valores_totais", {}).get("valor_total_fatura", 0.0)
         total_realizado += valor_mensal
 
-    #     custo_atualizado = calcular_tarifa_verde([f], tarifas_atualizado["verde"], tarifa_ere, demanda_base)
-    #     total_atualizado += custo_atualizado
-
-    #     tabela_ajuste.append({
-    #         "mes": mes_label,
-    #         "realizado": formatar(valor_real),
-    #         "atualizado": formatar(custo_atualizado)
-    #     })
-
-    # tabela_ajuste.append({
-    #     "mes": "TOTAL",
-    #     "realizado": formatar(total_realizado),
-    #     "atualizado": formatar(total_atualizado)
-    # })
-
     for real, atualizado in zip(valor_real,lista_verde_mensal):
         mesref = atualizado["mes"].lower().replace("/20", "/")[0:3] + atualizado["mes"][-2:]  # exemplo: "jul/23"
         tabela_ajuste.append({
@@ -225,7 +187,8 @@ def calcular_tabela_ajuste(fatura_dados, tarifas_atualizado, tarifa_ere, demanda
     tabela_ajuste.append({
         "mes": "TOTAL",
         "realizado": formatar(sum(valor_real)),
-        "atualizado": formatar(total_verde)
+        "atualizado": formatar(total_verde),
+        "ajuste": total_realizado - sum(valor_real)
     })
 
     return tabela_ajuste
@@ -252,63 +215,6 @@ def calcular_tabela_contrato_atual(
         "total": 0.0
     }
 
-    # for f in fatura_dados:
-    #     ident = f.get("identificacao", {})
-    #     mesref = ident.get("mes_referencia", "N/A")
-    #     mes_formatado = mesref.lower().replace("/20", "/")[0:3] + mesref[-2:]
-
-    #     consumo = f.get("consumo_ativo", {})
-    #     demanda = f.get("demanda", {})
-    #     componentes = f.get("componentes_extras", [])
-    #     impostos = f.get("impostos", [])
-
-    #     tusd_fp = tarifas_atualizado["verde"].get("TUSDforaPonta", 0.0)
-    #     tusd_p = tarifas_atualizado["verde"].get("TUSDponta", 0.0)
-    #     te_fp = tarifas_atualizado["verde"].get("TEforaPonta", 0.0)
-    #     te_p = tarifas_atualizado["verde"].get("TEponta", 0.0)
-    #     tarifa_energia_fp = tusd_fp + te_fp
-    #     tarifa_energia_p = tusd_p + te_p
-
-    #     energia_fp = consumo.get("fora_ponta_kwh", 0.0)
-    #     energia_p = consumo.get("ponta_kwh", 0.0)
-    #     total_consumo = energia_fp * tarifa_energia_fp + energia_p * tarifa_energia_p
-
-    #     demanda_fp_tarifa = tarifas_atualizado["verde"].get("DemandaForaPonta", 0.0)
-    #     contratada = demanda.get("contratada_kw", 0.0)
-    #     medida_fp = next((d["valor_kw"] for d in demanda.get("maxima", []) if d["periodo"] == "fora_ponta"), 0.0)
-    #     medida_p = next((d["valor_kw"] for d in demanda.get("maxima", []) if d["periodo"] == "ponta"), 0.0)
-    #     demanda_max = max(medida_fp, medida_p)
-    #     ultrapassagem = max(demanda_max - contratada, 0.0)
-    #     valor_demanda = demanda_max * demanda_fp_tarifa
-    #     valor_ultrapassagem = ultrapassagem * demanda_fp_tarifa * 2
-
-    #     bandeira = sum(c["valor_total"] for c in componentes if "bandeira" in c["descricao"].lower())
-        
-    #     bandeira_impostos = sum(
-    #         c.get("valor_impostos", 0.0) or 0.0
-    #         for c in f["componentes_extras"]
-    #         if "bandeira" in c.get("descricao", "").lower()
-    #     )
-
-    #     irrf_comp = sum(
-    #         c.get("valor_impostos", 0.0) or 0.0
-    #         for c in f["componentes_extras"]
-    #         if any(
-    #             termo in c.get("descricao", "").lower()
-    #             for termo in ["imposto de renda", "demanda imposto renda"]
-    #         )
-    #     )
-    #     juros = next((c["valor_total"] for c in f["componentes_extras"] if "juros" in c["descricao"].lower()), 0.0)
-    #     multa = next((c["valor_total"] for c in f["componentes_extras"] if "multa" in c["descricao"].lower()), 0.0)
-
-    #     iluminacao = sum(c["valor_total"] for c in componentes if "ilum" in c["descricao"].lower())
-    #     ere = (_pega_componente(f, "ere") or {"valor_total": 0.0})["valor_total"]
-
-    #     bandeira_liquido = bandeira - bandeira_impostos #bandeira * (pis_aliq + cofins_aliq) / 100
-    #     base = total_consumo + valor_demanda + valor_ultrapassagem + bandeira_liquido
-    #     impostos_valor = base / (1 - (pis_aliq + cofins_aliq + icms_aliq)/100) * (pis_aliq + cofins_aliq + icms_aliq)/100
-
-    #     total_geral = base + impostos_valor + ere + iluminacao + irrf_comp + juros + multa
     fatura_total = 0
     faturas_mensais = []
     # ---------- Cálculo das médias de impostos ---------- #
@@ -403,8 +309,7 @@ def calcular_tabela_contrato_atual(
                     Demanda = demanda_max
                 else:
                     Demanda = demanda_contratada
-
-        
+   
         custo_demanda_fp = Demanda * demanda_fp_tarifa
         custo_ultrapassagem = Ultrapassagem * demanda_fp_tarifa * 2
         demanda_total = custo_demanda_fp + custo_ultrapassagem
@@ -542,51 +447,6 @@ def calcular_tabela_contrato_proposto(
 
     demanda_fp_tarifa = tarifas_atualizado["verde"].get("DemandaForaPonta", 0.0)
 
-    # for f in fatura_dados:
-    #     consumo = f.get("consumo_ativo", {})
-    #     demanda = f.get("demanda", {})
-    #     componentes = f.get("componentes_extras", [])
-
-    #     # Tarifas otimizadas
-    #     tusd_fp = tarifas_atualizado["verde"].get("TUSDforaPonta", 0.0)
-    #     tusd_p = tarifas_atualizado["verde"].get("TUSDponta", 0.0)
-    #     te_fp = tarifas_atualizado["verde"].get("TEforaPonta", 0.0)
-    #     te_p = tarifas_atualizado["verde"].get("TEponta", 0.0)
-    #     tarifa_energia_fp = tusd_fp + te_fp
-    #     tarifa_energia_p = tusd_p + te_p
-
-    #     energia_fp = consumo.get("fora_ponta_kwh", 0.0)
-    #     energia_p = consumo.get("ponta_kwh", 0.0)
-    #     total_energia = energia_fp * tarifa_energia_fp + energia_p * tarifa_energia_p
-
-    #     # Demanda otimizada
-    #     demanda_contratada = demanda_verde_otima
-    #     maxima = demanda.get("maxima", [])
-    #     demanda_max_ponta = next((d["valor_kw"] for d in maxima if d.get("periodo") == "ponta"), 0.0)
-    #     demanda_max_fora_ponta = next((d["valor_kw"] for d in maxima if d.get("periodo") == "fora_ponta"), 0.0)
-    #     demanda_max = max(demanda_max_ponta, demanda_max_fora_ponta)
-
-    #     if demanda_max > demanda_contratada:
-    #         ultrapassagem = demanda_max - demanda_contratada
-    #         demanda_faturada = demanda_max
-    #     else:
-    #         ultrapassagem = 0.0
-    #         demanda_faturada = demanda_contratada
-
-    #     valor_demanda = demanda_faturada * demanda_fp_tarifa
-    #     valor_ultrapassagem = ultrapassagem * demanda_fp_tarifa * 2
-
-    #     # Componentes
-    #     bandeira = sum(c["valor_total"] for c in componentes if "bandeira" in c["descricao"].lower())
-    #     iluminacao = sum(c["valor_total"] for c in componentes if "ilum" in c["descricao"].lower())
-    #     ere_valor = (_pega_componente(f, "ere") or {"valor_total": 0.0})["valor_total"]
-
-    #     bandeira_liquido = bandeira - bandeira * (pis_aliq + cofins_aliq) / 100
-    #     base = total_energia + valor_demanda + valor_ultrapassagem + bandeira_liquido
-    #     impostos_valor = base / (1 - (pis_aliq + cofins_aliq + icms_aliq)/100) * (pis_aliq + cofins_aliq + icms_aliq)/100
-
-    #     total_geral = base + impostos_valor + ere_valor + iluminacao
-    
     fatura_total = 0
     faturas_mensais = []
     # ---------- Cálculo das médias de impostos ---------- #

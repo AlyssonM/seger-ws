@@ -36,6 +36,7 @@ test-results/
 
 # PDFs e faturas baixadas (opcional: mantenha no repositório se necessário)
 faturas_edp/
+*.pdf
 
 # Pipenv, Poetry ou outras dependências específicas
 Pipfile.lock
