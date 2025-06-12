@@ -97,7 +97,7 @@ def gerar_dados_contextuais_integrado(res, fatura_dados, ultrapassagem_ocorre, a
         "TarifaAnalisePonta": format_kw(demanda_azul_p),
         "TarifaAnaliseForaPonta": format_kw(demanda_azul_fp),
         "TarifaNova": "Tarifa Horária Verde",
-        "demandaAtual": format_kw(f1.get("demanda", {}).get("contratada_kw", 0.0)),
+        "demandaAtual": format_kw(f1.get("demanda", {}).get("contratada_fp_kw", 0.0)),
         "demandaNova": format_kw(demanda_verde_otima),
         "numContas": str(len(fatura_dados)),
         "baseDadosInic": ident.get("mes_referencia", "n/a"),
@@ -280,7 +280,7 @@ def calcular_tabela_contrato_atual(
         # logging.info(f"custo energia reativa excedente: {energia_reativa_ex}")
         Ultrapassagem = 0
         Demanda = 0
-        demanda_contratada = float(demanda["contratada_kw"])
+        demanda_contratada = float(demanda["contratada_fp_kw"])
         if consumo["energia_injetada_kwh"]:
             demanda_max = demanda["fora_ponta_kw"]
             # logging.info(f"demanda contratada: {demanda_contratada}")
@@ -293,7 +293,7 @@ def calcular_tabela_contrato_atual(
                 Demanda = demanda_contratada
         else:
             if demanda_contratada is None:
-                demanda_contratada = float(demanda["contratada_kw"])
+                demanda_contratada = float(demanda["contratada_fp_kw"])
             maxima = demanda.get("maxima", [])
             demanda_max_ponta = next((d["valor_kw"] for d in maxima if d.get("periodo") == "ponta"), 0.0)
             demanda_max_fora_ponta = next((d["valor_kw"] for d in maxima if d.get("periodo") == "fora_ponta"), 0.0)

@@ -144,7 +144,8 @@ def dados_fatura_json():
         "Retencao_Imposto": [],
         "PIS": [],
         "COFINS": [],
-        "ICMS": []
+        "ICMS": [],
+        "Fatura_total": []
     }
 
     for dt_ref, pdf_path in pdf_infos:
@@ -156,7 +157,7 @@ def dados_fatura_json():
             )
             response.raise_for_status()
             data_json = response.json()
-            logging.info(f"Dados da fatura para {pdf_path}:\n{data_json}")
+            # logging.info(f"Dados da fatura para {pdf_path}:\n{data_json}")
             nome_arquivo = os.path.basename(pdf_path)
             match = re.search(r'_(\w{3})-(\d{4})\.pdf$', nome_arquivo)
             mes_referencia = match.group(1) + "-" + match.group(2) if match else "DESCONHECIDO"
@@ -214,7 +215,9 @@ def dados_fatura_json():
             faturas_data["PIS"].append(pis)
             faturas_data["COFINS"].append(cofins)
             faturas_data["ICMS"].append(icms)
-
+            faturas_data["Fatura_total"].append(
+                data_json.get("valores_totais", {}).get("valor_total_fatura", 0.0)
+            )
         except Exception as e:
             import traceback
             traceback_str = traceback.format_exc()
@@ -474,14 +477,15 @@ def otimizar_faturas():
         tarifas_response.raise_for_status()
         tarifas_compactadas = tarifas_response.json()
         tarifas_compactadas = converter_tarifas_para_kwh(tarifas_compactadas)
+        tarifa_ere = tarifas_compactadas["convencional pr\u00e9-pagamento"]["TEforaPonta"]
         tarifa_azul = tarifas_compactadas.get("azul", {})
         tarifa_verde = tarifas_compactadas.get("verde", {})
         
         if not tarifa_azul or not tarifa_verde:
             return jsonify({"error": "Não foi possível obter as tarifas compactadas para as modalidades Azul e Verde."}), 500
 
-        result_verde = opt_tarifa_verde(faturas_data, tarifa_verde)
-        result_azul = opt_tarifa_azul(faturas_data, tarifa_azul)
+        result_verde = opt_tarifa_verde(faturas_data, tarifa_verde, tarifa_ere)
+        result_azul = opt_tarifa_azul(faturas_data, tarifa_azul, tarifa_ere)
         
         result = {
             "result_verde": result_verde,
@@ -565,10 +569,10 @@ def calcular_fatura_verde():
         tarifas_response.raise_for_status()
         tarifas_compactadas = tarifas_response.json()
         tarifas_compactadas = converter_tarifas_para_kwh(tarifas_compactadas)
-        logging.info(f"Tarifas:\n{tarifas_compactadas}")
-        logging.info(f"Dados da Fatura:\n{faturas_data}")
+        # logging.info(f"Tarifas:\n{tarifas_compactadas}")
+        # logging.info(f"Dados da Fatura:\n{faturas_data}")
         tarifa_ere = tarifas_compactadas["convencional pr\u00e9-pagamento"]["TEforaPonta"]
-        logging.info(f"Tarifa ERE: {tarifa_ere}")
+        # logging.info(f"Tarifa ERE: {tarifa_ere}")
         calc_verde = calcular_tarifa_verde(faturas_data, tarifas_compactadas["verde"], tarifa_ere, demanda)
         result = {
             "result_verde": calc_verde,
@@ -589,9 +593,9 @@ def calcular_fatura_azul():
     codinstalacao = data.get("codInstalacao")
     periodo = data.get("periodo")
     distribuidora = data.get("distribuidora")
-    demanda = data.get("demanda")
+    demanda = data.get("demanda",None)
 
-    if not all([data_inicio, data_fim, codinstalacao, periodo, demanda]):
+    if not all([data_inicio, data_fim, codinstalacao, periodo]):
         return jsonify({"error": "Parâmetros obrigatórios: data_inicio, data_fim, CodInstalacao, periodo, distribuidora"}), 400
 
     dt1 = ref_to_date(data_inicio)
@@ -652,10 +656,10 @@ def calcular_fatura_azul():
         tarifas_response.raise_for_status()
         tarifas_compactadas = tarifas_response.json()
         tarifas_compactadas = converter_tarifas_para_kwh(tarifas_compactadas)
-        logging.info(f"Tarifas:\n{tarifas_compactadas}")
-        logging.info(f"Dados da Fatura:\n{faturas_data}")
+        # logging.info(f"Tarifas:\n{tarifas_compactadas}")
+        # logging.info(f"Dados da Fatura:\n{faturas_data}")
         tarifa_ere = tarifas_compactadas["convencional pr\u00e9-pagamento"]["TEforaPonta"]
-        logging.info(f"Tarifa ERE: {tarifa_ere}")
+        # logging.info(f"Tarifa ERE: {tarifa_ere}")
         calc_azul = calcular_tarifa_azul(faturas_data, tarifas_compactadas["azul"], tarifa_ere, demanda)
         result = {
             "result_verde": calc_azul,
@@ -664,3 +668,19 @@ def calcular_fatura_azul():
     except Exception as e:
         # Trata erros na função de análise
         return jsonify({"error": f"Erro durante a análise de eficiência energética: {e}"}), 500
+
+@bp.route("/relatorio/<cod_instalacao>", methods=["GET"])
+def baixar_relatorio_por_cod(cod_instalacao):
+    nome_arquivo = f"relatorio_uc_{cod_instalacao}.pdf"
+    caminho_arquivo = os.path.join("/app/src/data", nome_arquivo)
+
+    if os.path.exists(caminho_arquivo):
+        return send_file(
+            caminho_arquivo,
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=nome_arquivo
+        )
+    else:
+        return jsonify({"error": f"Relatório não encontrado para instalação {cod_instalacao}"}), 404
+

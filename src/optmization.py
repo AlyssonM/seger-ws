@@ -10,7 +10,7 @@ from src.utils.tarifas import calcular_tarifa_verde, calcular_tarifa_azul
 def opt_tarifa_verde(dados, tarifas, tarifa_ere):
     resultado = minimize_scalar(
         lambda d: calcular_tarifa_verde(dados, tarifas, tarifa_ere, d)[0],
-        bounds=(30, 600),
+        bounds=(30, 1000),
         method='bounded'
     )
     demanda_otima = round(resultado.x)
@@ -74,8 +74,8 @@ def opt_tarifa_azul(dados, tarifas, tarifa_ere):
         "custo_otimo": custo_otimo
     }
     # Geração de grade de valores
-    x = np.linspace(30, 600, 50)  # Demanda ponta
-    y = np.linspace(30, 600, 50)  # Demanda fora de ponta
+    x = np.linspace(30, 1000, 50)  # Demanda ponta
+    y = np.linspace(30, 1000, 50)  # Demanda fora de ponta
     X, Y = np.meshgrid(x, y)
     Z = np.array([
         [calcular_tarifa_azul(dados, tarifas, tarifa_ere, [dp, dfp])[0] for dp in x]

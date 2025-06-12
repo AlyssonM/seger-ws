@@ -191,6 +191,11 @@ def extrair_dados_completos_da_fatura_regex(texto: str) -> Dict[str, Any]:
         "classe": _find(r"(PODER\s+PUBLICO\s*-\s*[A-Z\s]+)", texto),
     })
 
+    modalidade_match = re.search(r"\b(A\s+)?(AZUL|VERDE|BRANCA|CONVENCIONAL)(?=\b)", texto, re.IGNORECASE)
+    if modalidade_match:
+        modalidade = modalidade_match.group(2).lower()
+        identificacao["modalidade"] = modalidade
+
     # Mês de referência
     mes_ano = re.search(
         r"(Janeiro|Fevereiro|Mar[çc]o|Abril|Maio|Junho|Julho|Agosto|"
@@ -255,9 +260,31 @@ def extrair_dados_completos_da_fatura_regex(texto: str) -> Dict[str, Any]:
             out["consumo_ativo"]["fora_ponta_kwh"], 4)
 
 
-    # ---------- DEMANDA ---------- 
-    contrat_pat = rf"Demanda\s+Contratual[- ]KW\s+({NUMBER})"
-    out.setdefault("demanda", {})["contratada_kw"] = _clean_num(_find(contrat_pat, texto, re.I))
+    # ---------- DEMANDA ----------
+    contratada_fp_pat = rf"Demanda\s+Contratual\s+(?:FP-)?KW\s+({NUMBER})"
+    contratada_p_pat = rf"Demanda\s+Contratual\s+P-KW\s+({NUMBER})"
+    contratada_geral_pat = rf"Demanda\s+Contratual-?KW\s+({NUMBER})"
+
+    # Extrações
+    valor_p_kw = _find(contratada_p_pat, texto, re.I)
+    valor_fp_kw = _find(contratada_fp_pat, texto, re.I)
+    valor_geral_kw = _find(contratada_geral_pat, texto, re.I)
+
+    # Registro no dicionário
+    out.setdefault("demanda", {})
+
+    if valor_p_kw:
+        out["demanda"]["contratada_p_kw"] = _clean_num(valor_p_kw)
+
+    if valor_fp_kw:
+        out["demanda"]["contratada_fp_kw"] = _clean_num(valor_fp_kw)
+
+    # Se não tiver FP-KW explícito mas tiver "Demanda Contratual KW", considerar como FP
+    elif valor_geral_kw:
+        out["demanda"]["contratada_fp_kw"] = _clean_num(valor_geral_kw)
+
+    # contrat_pat = rf"Demanda\s+Contratual[- ]KW\s+({NUMBER})"
+    # out.setdefault("demanda", {})["contratada_kw"] = _clean_num(_find(contrat_pat, texto, re.I))
 
 
     # ---------- DEMANDA MÁXIMA (leitura) ----------
@@ -373,11 +400,25 @@ def extrair_dados_completos_da_fatura_regex(texto: str) -> Dict[str, Any]:
     # logging.info("Extraindo informações sobre impostos...")
     
     impostos_dict = {}
-    for valor, aliq, base, nome in _findall(rf"({NUMBER})\s+({NUMBER})\s+({NUMBER})\s+(PIS|COFINS|ICMS)", texto, re.I):
+    for valor, aliq, base, nome in _findall(rf"({NUMBER})\s+({NUMBER})\s+({NUMBER})\s+(PIS|COFINS)", texto, re.I):
         nome = nome.upper()
         if nome not in impostos_dict:
             impostos_dict[nome] = {
                 "nome": nome,
+                "aliquota": _clean_num(aliq),
+                "base_calculo": _clean_num(base),
+                "valor": _clean_num(valor)
+            }
+
+    # Captura valores de ICMS em tabelas
+    icms_matches = _findall(
+        rf"({NUMBER})\s+({NUMBER})\s+({NUMBER})\s+(\d{{1,2}},\d{{3}}|\d{{1,2}})(?:\s+)?(?:ICMS)?\s+({NUMBER})", texto, re.I
+    )
+
+    for base, _, _, aliq, valor in icms_matches:
+        if "ICMS" not in impostos_dict:
+            impostos_dict["ICMS"] = {
+                "nome": "ICMS",
                 "aliquota": _clean_num(aliq),
                 "base_calculo": _clean_num(base),
                 "valor": _clean_num(valor)
