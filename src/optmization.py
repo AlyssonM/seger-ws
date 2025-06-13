@@ -37,10 +37,7 @@ def opt_tarifa_verde(dados, tarifas, tarifa_ere):
     # demanda_otima = resultado[0]
     # custo_otimo = resultado[1]
     
-    result = {
-        "demanda_otima": demanda_otima,
-        "custo_otimo": custo_otimo
-    }
+    
     demanda_range = np.linspace(100, 1000, 50)
     custos_verde = [calcular_tarifa_verde(dados, tarifas, tarifa_ere, d)[0] for d in demanda_range]
     plt.figure(figsize=(10, 6))
@@ -54,6 +51,14 @@ def opt_tarifa_verde(dados, tarifas, tarifa_ere):
     plt.tight_layout()
     plt.savefig("/app/src/data/plots/otimizacao_tarifa_verde1.png")
     plt.close()
+
+    result = {
+        "demanda_otima": demanda_otima,
+        "custo_otimo": custo_otimo,
+        "demanda_range": demanda_range.tolist(),
+        "custos_verde": custos_verde
+    }
+    
     return result
 
 
@@ -68,11 +73,7 @@ def opt_tarifa_azul(dados, tarifas, tarifa_ere):
     demanda_fp_otima = round(resultado.x[1])
     custo_otimo = resultado.fun
 
-    result = {
-        "demanda_p_otima": demanda_p_otima,
-        "demanda_fp_otima": demanda_fp_otima,
-        "custo_otimo": custo_otimo
-    }
+    
     # Geração de grade de valores
     x = np.linspace(30, 1000, 50)  # Demanda ponta
     y = np.linspace(30, 1000, 50)  # Demanda fora de ponta
@@ -115,4 +116,14 @@ def opt_tarifa_azul(dados, tarifas, tarifa_ere):
     plt.tight_layout()
     plt.savefig("/app/src/data/plots/otimizacao_tarifa_azul_contorno.png")
     plt.close()
+
+    result = {
+        "demanda_p_otima": demanda_p_otima,
+        "demanda_fp_otima": demanda_fp_otima,
+        "custo_otimo": custo_otimo,
+        "x": x.tolist(),  # eixo demanda ponta
+        "y": y.tolist(),  # eixo demanda fora ponta
+        "z": Z.tolist()   # matriz de custos
+    }
+
     return result
