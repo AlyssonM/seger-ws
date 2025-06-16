@@ -1,4 +1,12 @@
 # seger/routes.py
+"""
+Módulo que define as rotas (endpoints) da API para funcionalidades relacionadas ao Seger.
+
+Este módulo gerencia as requisições HTTP para baixar, processar e analisar
+faturas de energia, além de fornecer dados de tarifas e realizar otimizações
+de custo.
+"""
+
 from flask import Blueprint, request, jsonify, send_file
 from src.scraper import baixar_faturas_por_instalacao
 from src.parser  import extrair_dados_completos_da_fatura, analisar_eficiencia_energetica
@@ -25,6 +33,16 @@ MES_MAP = {
 }
 
 def ref_to_date(ref: str) -> datetime:
+    """
+    Converte uma string de referência de mês/ano (ex: "JAN-2023") para um objeto datetime.
+
+    Args:
+        ref: A string no formato "MMM-AAAA" (ex: "JAN-2023").
+
+    Returns:
+        Um objeto datetime representando o primeiro dia do mês e ano especificados,
+        ou datetime.min se a string não estiver no formato esperado.
+    """
     try:
         mes, ano = ref.upper().split("-")
         return datetime(int(ano), MES_MAP[mes], 1)
@@ -32,6 +50,21 @@ def ref_to_date(ref: str) -> datetime:
         return datetime.min
 
 def converter_tarifas_para_kwh(tarifas_compactadas):
+    """
+    Converte valores de tarifas de MWh para kWh.
+
+    Identifica as chaves que representam tarifas de energia em MWh dentro do
+    dicionário de tarifas compactadas e converte seus valores para kWh,
+    dividindo por 1000.
+
+    Args:
+        tarifas_compactadas: Um dicionário contendo as tarifas organizadas
+                             por modalidade e tipo, com alguns valores em MWh.
+
+    Returns:
+        O mesmo dicionário de tarifas, mas com os valores de tarifas de energia
+        convertidos para kWh.
+    """
     # Define quais chaves são tarifas de energia (em MWh e devem ser convertidas)
     chaves_energia = {
         "TE", "TUSD",
@@ -50,6 +83,23 @@ def converter_tarifas_para_kwh(tarifas_compactadas):
 
 @bp.route("/faturas", methods=["POST"])
 def faturas():
+    """
+    Endpoint para baixar faturas de energia.
+
+    Recebe uma lista de códigos de instalação e um intervalo de datas
+    e aciona o scraper para baixar as faturas correspondentes.
+
+    Body da Requisição (JSON):
+        {
+          "instalacoes": ["cod_instalacao1", "cod_instalacao2"],
+          "data_inicio": "JAN-2023",
+          "data_fim": "DEZ-2023",
+          "mode": true
+        }
+
+    Respostas:
+
+    """
     data = request.get_json(force=True)
     instalacoes = data.get("instalacoes")
     inicio      = data.get("data_inicio")
@@ -68,6 +118,17 @@ def faturas():
 
 @bp.route("/faturas/<path:pdf_path>", methods=["GET"])
 def download(pdf_path):
+    """
+    Endpoint para baixar um arquivo PDF de fatura.
+
+    Args:
+        pdf_path: O caminho para o arquivo PDF a ser baixado.
+
+    Respostas:
+        200 OK: O arquivo PDF como anexo.
+        404 Not Found: Se o arquivo PDF não for encontrado.
+        # Pode haver outros códigos de erro dependendo da implementação de send_file
+    """
     # envia o PDF como anexo
     return send_file(pdf_path, mimetype="application/pdf", as_attachment=True)
 
@@ -75,6 +136,22 @@ def download(pdf_path):
 def dados_fatura():
     data     = request.get_json(force=True)
     pdf_path = data.get("pdf_path", "")
+    """
+    Endpoint para extrair dados estruturados de um arquivo PDF de fatura.
+
+    Recebe o caminho de um arquivo PDF e extrai informações relevantes
+    utilizando o parser.
+
+    Body da Requisição (JSON):
+        {
+          "pdf_path": "caminho/arquivo.pdf",
+          "via_regex": true  # Opcional, padrão é true
+        }
+
+    Respostas:
+        200 OK: JSON contendo os dados extraídos da fatura.
+
+    """
     via_regex  = data.get("via_regex", True)
     if not pdf_path:
         return jsonify({"error": "pdf_path é obrigatório"}), 400
@@ -91,6 +168,24 @@ def dados_fatura():
 @bp.route("/faturas-json", methods=["POST"])
 def dados_fatura_json():
     data = request.get_json(force=True)
+    """
+    Endpoint para obter dados de faturas em formato JSON para um intervalo de datas.
+
+    Recebe o código de instalação, data de início e data de fim, localiza
+    as faturas no diretório correspondente, extrai os dados de cada fatura
+    e retorna um JSON consolidado.
+
+    Body da Requisição (JSON):
+        {
+          "data_inicio": "JAN-2023",
+          "data_fim": "DEZ-2023",
+          "codInstalacao": "codigo_da_instalacao",
+          "via_regex": true # Opcional, padrão é true
+        }
+
+    Respostas:
+        200 OK: JSON contendo os dados consolidados das faturas no intervalo.
+    """
     via_regex = data.get("via_regex", True)
     data_inicio = data.get("data_inicio")
     data_fim = data.get("data_fim")
@@ -226,15 +321,25 @@ def dados_fatura_json():
     # ✅ Este retorno deve estar fora do loop
     return jsonify(faturas_data)
 
-
-
 @bp.route("/dados-fatura/teste", methods=["POST"])
 def dados_fatura_teste():
     """
-    Corpo esperado:
-    {
-      "pdf_path": "<caminho/arquivo.pdf>"
-    }
+    Endpoint para testar e comparar a extração de dados de fatura via regex e LLM.
+
+    Recebe o caminho de um arquivo PDF, extrai os dados usando ambos os métodos
+    e retorna as diferenças encontradas, além dos resultados de cada método.
+
+    Body da Requisição (JSON):
+        {
+          "pdf_path": "caminho/arquivo.pdf"
+        }
+
+    Respostas:
+        200 OK: JSON com o status da comparação, diferenças e os dados
+                extraídos por regex e LLM.
+        400 Bad Request: JSON com mensagem de erro se o pdf_path estiver faltando.
+        500 Internal Server Error: JSON com mensagem de erro se ocorrer
+                                   um erro durante o processamento.
     """
     data     = request.get_json(force=True)
     pdf_path = data.get("pdf_path", "")
@@ -263,7 +368,27 @@ def dados_fatura_teste():
 @bp.route("/analisar-fatura", methods=["POST"])
 def analisar_faturas():
     """
-    Endpoint para testar a análise de eficiência energética a partir de caminhos de PDFs.
+    Endpoint para analisar a eficiência energética e otimização de tarifas para faturas.
+
+    Recebe dados de faturas (através de caminhos de PDFs), período,
+    distribuidora e código de instalação. Realiza a análise de eficiência
+    energética e as otimizações de tarifa verde e azul, e tenta gerar um relatório.
+
+    Body da Requisição (JSON):
+        {
+          "data_inicio": "JAN-2023",
+          "data_fim": "DEZ-2023",
+          "codInstalacao": "codigo_da_instalacao",
+          "periodo": "JAN-2024", # Período para buscar tarifas
+          "distribuidora": "Nome da Distribuidora",
+          "via_regex": true # Opcional, padrão é true
+        }
+
+    Respostas:
+        200 OK: JSON com os resultados da análise de eficiência e otimização.
+        400 Bad Request: JSON com mensagem de erro se parâmetros obrigatórios
+                         estiverem faltando.
+
     """
     data = request.get_json()
     via_regex = data.get("via_regex", True)
@@ -382,9 +507,28 @@ def analisar_faturas():
 
 @bp.route("/tarifas", methods=["GET"])
 def tarifas():
+    """
+    Endpoint para obter dados de tarifas de energia.
+
+    Permite filtrar as tarifas por período, distribuidora, modalidade,
+    subgrupo, classe e detalhe.
+
+    Parâmetros da Query String:
+        periodo (obrigatório): O período de referência das tarifas (ex: "JAN-2024").
+        distribuidora (obrigatório): O nome da distribuidora.
+        modalidade (opcional): A modalidade tarifária (ex: "VERDE", "AZUL").
+        subgrupo (opcional): O subgrupo tarifário (ex: "A4").
+        classe (opcional): A classe de consumo.
+        detalhe (opcional): Nível de detalhe da tarifa.
+
+    Respostas:
+        200 OK: JSON contendo as tarifas filtradas e compactadas por modalidade.
+        400 Bad Request: JSON com mensagem de erro se parâmetros obrigatórios
+                         estiverem faltando.
+    """
     periodo = request.args.get("periodo")
     distribuidora = request.args.get("distribuidora")
-    modalidade = request.args.get("modalidade")  # opcional
+    modalidade = request.args.get("modalidade") # opcional
     subgrupo = request.args.get("subgrupo")      # opcional
     classe = request.args.get("classe")          # opcional
     detalhe = request.args.get("detalhe")        # opcional
@@ -413,7 +557,25 @@ def tarifas():
 @bp.route("/otimizacao", methods=["POST"])
 def otimizar_faturas():
     """
-    Endpoint para testar a análise de eficiência energética a partir de caminhos de PDFs.
+    Endpoint para realizar a otimização de tarifas verde e azul com base em faturas.
+
+    Recebe dados de faturas (através de caminhos de PDFs), data de início,
+    data de fim e código de instalação. Realiza as otimizações de tarifa verde
+    e azul e retorna os resultados.
+
+    Body da Requisição (JSON):
+        {
+          "data_inicio": "JAN-2023",
+          "data_fim": "DEZ-2023",
+          "codInstalacao": "codigo_da_instalacao",
+          "distribuidora": "Nome da Distribuidora" # Opcional, padrão "EDP ES"
+        }
+
+    Respostas:
+        200 OK: JSON com os resultados das otimizações de tarifa verde e azul.
+        400 Bad Request: JSON com mensagem de erro se parâmetros obrigatórios
+                         estiverem faltando.
+
     """
     data = request.get_json()
     data_inicio = data.get("data_inicio")
@@ -499,6 +661,26 @@ def otimizar_faturas():
 
 @bp.route("/calc-verde", methods=["POST"])
 def calcular_fatura_verde():
+    """
+    Endpoint para calcular o custo da fatura com uma demanda específica na tarifa verde.
+
+    Recebe dados de faturas (através de caminhos de PDFs), informações
+    para buscar tarifas (período, distribuidora) e uma demanda para cálculo.
+
+    Body da Requisição (JSON):
+        {
+          "data_inicio": "JAN-2023",
+          "data_fim": "DEZ-2023",
+          "codInstalacao": "codigo_da_instalacao",
+          "periodo": "JAN-2024", # Período para buscar tarifas
+          "distribuidora": "Nome da Distribuidora",
+          "demanda": 100.0, # Demanda para cálculo na tarifa verde
+          "via_regex": true # Opcional, padrão é true
+        }
+
+    Respostas:
+        200 OK: JSON com o resultado do cálculo do custo na tarifa verde.
+    """
     data = request.get_json()
     via_regex = data.get("via_regex", True)
     data_inicio = data.get("data_inicio")
@@ -586,6 +768,26 @@ def calcular_fatura_verde():
 
 @bp.route("/calc-azul", methods=["POST"])
 def calcular_fatura_azul():
+    """
+    Endpoint para calcular o custo da fatura com uma demanda específica na tarifa azul.
+
+    Recebe dados de faturas (através de caminhos de PDFs), informações
+    para buscar tarifas (período, distribuidora) e uma demanda para cálculo.
+
+    Body da Requisição (JSON):
+        {
+          "data_inicio": "JAN-2023",
+          "data_fim": "DEZ-2023",
+          "codInstalacao": "codigo_da_instalacao",
+          "periodo": "JAN-2024", # Período para buscar tarifas
+          "distribuidora": "Nome da Distribuidora",
+          "demanda": {"ponta": 50.0, "fora_ponta": 100.0}, # Demanda para cálculo na tarifa azul (objeto com ponta e fora_ponta)
+          "via_regex": true # Opcional, padrão é true
+        }
+
+    Respostas:
+        200 OK: JSON com o resultado do cálculo do custo na tarifa azul.
+    """
     data = request.get_json()
     via_regex = data.get("via_regex", True)
     data_inicio = data.get("data_inicio")
@@ -671,6 +873,16 @@ def calcular_fatura_azul():
 
 @bp.route("/relatorio/<cod_instalacao>", methods=["GET"])
 def baixar_relatorio_por_cod(cod_instalacao):
+    """
+    Endpoint para baixar o relatório de análise de eficiência energética em PDF.
+
+    Args:
+        cod_instalacao: O código da instalação para a qual o relatório foi gerado.
+
+    Respostas:
+        200 OK: O arquivo PDF do relatório como anexo.
+
+    """
     nome_arquivo = f"relatorio_uc_{cod_instalacao}.pdf"
     caminho_arquivo = os.path.join("/app/src/data", nome_arquivo)
 
@@ -683,4 +895,3 @@ def baixar_relatorio_por_cod(cod_instalacao):
         )
     else:
         return jsonify({"error": f"Relatório não encontrado para instalação {cod_instalacao}"}), 404
-

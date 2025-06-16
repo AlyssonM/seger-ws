@@ -1,5 +1,12 @@
-from scipy.optimize import minimize_scalar, minimize
-from scipy.optimize import differential_evolution
+"""
+Módulo para otimização de custos com energia elétrica nas modalidades de tarifa verde e azul.
+
+Este módulo oferece funcionalidades para analisar dados de consumo de energia
+e determinar a configuração tarifária (verde ou azul) que resulta no menor
+custo para o consumidor.
+"""
+
+from scipy.optimize import minimize_scalar, minimize, differential_evolution
 from scipy.optimize import brute
 import numpy as np
 import matplotlib.pyplot as plt
@@ -8,6 +15,28 @@ from mpl_toolkits.mplot3d import Axes3D
 from src.utils.tarifas import calcular_tarifa_verde, calcular_tarifa_azul
 
 def opt_tarifa_verde(dados, tarifas, tarifa_ere):
+    """
+    Realiza a otimização de custo para a modalidade de tarifa verde.
+
+    Analisa os dados de consumo e as tarifas disponíveis para encontrar
+    a configuração da tarifa verde que minimiza o custo total de energia.
+
+    Args:
+        dados: Estrutura de dados contendo o perfil de consumo de energia.
+               Pode ser um objeto, dicionário ou outro formato que represente
+               os dados de consumo ao longo do tempo.
+        tarifas: Dicionário ou objeto contendo as informações detalhadas das
+                 tarifas de energia disponíveis, incluindo valores por kWh,
+                 demandas, etc.
+        tarifa_ere: Informações específicas da tarifa de energia de referência,
+                    se aplicável à otimização da tarifa verde.
+
+    Returns:
+        Um dicionário contendo os resultados da otimização, tipicamente incluindo:
+        - 'custo_otimizado': O valor mínimo de custo encontrado.
+        - 'configuracao_otima': Detalhes da configuração da tarifa verde que gerou o custo mínimo.
+        - Outras métricas relevantes da otimização.
+    """
     resultado = minimize_scalar(
         lambda d: calcular_tarifa_verde(dados, tarifas, tarifa_ere, d)[0],
         bounds=(30, 1000),
@@ -63,6 +92,29 @@ def opt_tarifa_verde(dados, tarifas, tarifa_ere):
 
 
 def opt_tarifa_azul(dados, tarifas, tarifa_ere):
+    """
+    Realiza a otimização de custo para a modalidade de tarifa azul.
+
+    Considerando o perfil de consumo com distinção entre horários de ponta
+    e fora de ponta, esta função busca a combinação ideal de demanda
+    contratada e consumo para minimizar o custo na tarifa azul.
+
+    Args:
+        dados: Estrutura de dados contendo o perfil de consumo de energia,
+               incluindo a distinção entre consumo de ponta e fora de ponta.
+        tarifas: Dicionário ou objeto contendo as informações detalhadas das
+                 tarifas azuis disponíveis, incluindo valores por kWh,
+                 demandas de ponta e fora de ponta, etc.
+        tarifa_ere: Informações específicas da tarifa de energia de referência,
+                    se aplicável à otimização da tarifa azul.
+
+    Returns:
+        Um dicionário contendo os resultados da otimização para a tarifa azul,
+        tipicamente incluindo:
+        - 'custo_otimizado': O valor mínimo de custo encontrado.
+        - 'configuracao_otima': Detalhes da configuração da tarifa azul que gerou o custo mínimo (ex: demanda contratada ótima).
+        - Outras métricas relevantes da otimização.
+    """
     resultado = minimize(
         lambda dm: calcular_tarifa_azul(dados, tarifas, tarifa_ere, dm)[0],
         x0=[100, 100],

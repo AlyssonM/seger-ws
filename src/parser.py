@@ -1,8 +1,14 @@
 # src/parser.py
+"""
+Módulo responsável por analisar e extrair informações de documentos,
+como faturas em formato PDF.
+
+Inclui funcionalidades para leitura de PDFs, extração de texto e
+processamento para obter dados estruturados.
+"""
 from typing import Any, Dict, List, Optional
 import os, json
 import PyPDF2
-import pdfplumber
 from google import genai
 from google.genai import types
 from src.parser_regex import extrair_dados_completos_da_fatura_regex
@@ -14,23 +20,54 @@ import logging
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"), http_options=types.HttpOptions(api_version='v1alpha'))
 
 def _extrair_texto_pdf(pdf_path: str) -> str:
+    """
+        Extrai o texto contido em um arquivo PDF.
+
+        Processa cada página do arquivo PDF especificado e concatena o texto
+        extraído de cada uma.
+
+        Args:
+            pdf_path: O caminho para o arquivo PDF a ser processado.
+
+        Returns:
+            Uma string contendo todo o texto extraído do PDF, com as páginas
+            separadas por quebras de linha.
+    """
     texto = []
     with open(pdf_path, "rb") as f:
         reader = PyPDF2.PdfReader(f)
         for page in reader.pages:
             texto.append(page.extract_text() or "")
     
-    # with pdfplumber.open(pdf_path) as pdf:
-    #     for page in pdf.pages:
-    #         tables = page.extract_tables()
-    #         for table in tables:
-    #             for row in table:
-    #                 logging.info(f"Table row: {row}")
-
     return "\n".join(texto)
 
-def extrair_dados_completos_da_fatura(pdf_path: str, via_regex: bool = True) -> Dict[str, Any]:
-    # 2) Extrai texto do PDF
+def extrair_dados_completos_da_fatura(
+    pdf_path: str, 
+    via_regex: bool = True
+) -> Dict[str, Any]:
+    """
+        Extrai dados completos de uma fatura em formato PDF.
+
+        Esta função analisa o conteúdo da fatura PDF e extrai informações
+        estruturadas relevantes, como dados do cliente, valores, consumo,
+        etc. A extração pode ser realizada via regex ou outros métodos.
+
+        Args:
+            pdf_path: O caminho para o arquivo PDF da fatura.
+            via_regex: Booleano indicando se a extração deve usar expressões
+                    regulares (regex). O valor padrão é True.
+
+        Returns:
+            Um dicionário contendo os dados extraídos da fatura. A estrutura
+            do dicionário depende das informações encontradas e do método de
+            extração utilizado.
+
+        Raises:
+            FileNotFoundError: Se o arquivo PDF especificado não for encontrado.
+            ValueError: Se o conteúdo do PDF não puder ser processado como fatura.
+            # Adicione outras exceções relevantes aqui.
+    """
+    # 1) Extrar os dados do PDF via texto
     texto = _extrair_texto_pdf(pdf_path)
     # logging.info(f"texto:\n{texto}\n\n")
     if via_regex:
@@ -42,7 +79,8 @@ def extrair_dados_completos_da_fatura(pdf_path: str, via_regex: bool = True) -> 
             traceback_str = traceback.format_exc()
             logging.error("❌ ERRO ao aplicar regex:\n", traceback_str)
             return {"error": f"Erro ao aplicar regex: {str(e)}"}
-    # 3) Monta conteúdo no formato chat
+
+    # 2) Monta conteúdo no formato chat
     system_prompt = """
     Você é um assistente especializado em extrair dados de faturas de energia elétrica da EDP.
 
@@ -163,7 +201,7 @@ def extrair_dados_completos_da_fatura(pdf_path: str, via_regex: bool = True) -> 
             types.Part.from_text(text=texto[:100000])]
     )
     
-    # 4) Chamada ao Gemini via generate_content
+    # 3) Chamada ao Gemini via generate_content
     response = client.models.generate_content(
         model="gemini-2.0-flash-001",
         contents=contents,
@@ -173,7 +211,7 @@ def extrair_dados_completos_da_fatura(pdf_path: str, via_regex: bool = True) -> 
         )
     )
 
-    # 5) Parse do JSON retornado
+    # 4) Parse do JSON retornado
     try:
         clean_text = re.sub(r"^```json\s*|\s*```$", "", response.text.strip(), flags=re.MULTILINE)
         logging.info(f"resposta do modelo:\n{clean_text}")
@@ -193,7 +231,29 @@ def analisar_eficiencia_energetica(
     demanda_azul_fp_otima
 ) -> Dict[str, Any]:
     """
-    Reproduz o cálculo da planilha 'Projeto Análise Tarifária – SEGER'.
+    Reproduz o cálculo da planilha 'Projeto Análise Tarifária – SEGER',
+    com base nos dados das faturas de energia
+    Monta as tabelas necessárias para a automação de geração do relatório
+
+    Args:
+        fatura_dados: Um dicionário contendo os dados estruturados extraídos
+                      de um conjunto de faturas de energia, tipicamente obtidos da função
+                      `extrair_dados_completos_da_fatura`.
+        tarifas: Dicionário contendo os valores das tarifas referentes ao período de
+                 de faturamento dos dados para a modalidade contratada (Azul, verde, etc..)
+        tarifa_ere: Dicionário contendo os valores da tarifa ERE referentes ao período de
+                    de faturamento dos dados para a modalidade contratada (Azul, verde, etc..)
+        tarifas_atualizado: Dicionário contendo os valores das tarifas referentes ao período corrente
+                            de faturamento da legislação para a modalidade contratada (Azul, verde, etc..)
+        tarifa_ere_atualizado: Dicionário contendo os valores da tarifa ERE referente ao período corrente
+                               de faturamento da legislação para a modalidade contratada (Azul, verde, etc..)
+        demanda_verde_otima: demanda ótima para a modalidade verde
+        demanda_azul_p_otima: demanda ótima para a modalidade azul (ponta)
+        demanda_azul_fp_otima: demanda ótima para a modalidade azul (fora ponta)
+    
+    Returns:
+        Um dicionário contendo os dados estruturados gerados a partir de um conjunto de faturas de energia,
+        contendo as tabelas necessárias para a automação de geração do relatório.
     """
     from .utils.tarifas import (
         calcular_tarifa_verde,

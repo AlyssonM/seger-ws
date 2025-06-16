@@ -1,3 +1,10 @@
+"""
+Módulo responsável por realizar o scraping de faturas de energia do portal online da EDP.
+
+Utiliza Playwright para automatizar a navegação e download de arquivos PDF
+de faturas para um ou mais números de instalação, dentro de um período
+especificado.
+"""
 # seger/scraper.py
 from playwright.sync_api import sync_playwright
 import os
@@ -9,10 +16,17 @@ import logging
 
 load_dotenv()
 
-BASE_DIR    = os.path.join(os.getcwd(), "faturas_edp")
-LOG_DIR     = os.path.join(os.getcwd(), "src/logs")
+BASE_DIR = os.path.join(os.getcwd(), "faturas_edp")
+"""Diretório base onde as faturas baixadas serão salvas."""
+
+LOG_DIR = os.path.join(os.getcwd(), "src/logs")
+"""Diretório onde os arquivos de log do scraper serão armazenados."""
+
 LOGIN_EMAIL = os.getenv("EDP_LOGIN_EMAIL", "")
+"""E-mail utilizado para login no portal da EDP. Obtido de variável de ambiente."""
+
 LOGIN_SENHA = os.getenv("EDP_LOGIN_SENHA", "")
+"""Senha utilizada para login no portal da EDP. Obtida de variável de ambiente."""
 
 # Configuração do logger
 log_file = os.path.join(LOG_DIR, "scraper_edp.log")
@@ -26,6 +40,17 @@ logging.basicConfig(
 )
 
 def ref_to_date(ref: str) -> datetime:
+    """
+    Converte uma string de referência de mês/ano (ex: "JAN-2023") para um objeto datetime.
+
+    Similar à função no módulo routes, converte a referência textual
+    para um objeto datetime.
+
+    Args:
+        ref: A string no formato "MMM-AAAA" (ex: "JAN-2023").
+
+    Returns:
+        Um objeto datetime representando o primeiro dia do mês e ano especificados, ou datetime.min se a string não estiver no formato esperado."""
     mes_map = {
         "JAN":"Jan","FEV":"Feb","MAR":"Mar","ABR":"Apr",
         "MAI":"May","JUN":"Jun","JUL":"Jul","AGO":"Aug",
@@ -39,6 +64,15 @@ def ref_to_date(ref: str) -> datetime:
         return datetime.min
 
 def reload_faturas(page,numero) -> None:
+    """
+    Tenta recarregar a página de faturas para uma instalação específica no Playwright.
+
+    Usado internamente para tentar contornar erros de carregamento da página
+    de faturas no portal da EDP.
+
+    Args:
+        page: O objeto Page do Playwright representando a página atual.
+        numero: O número da instalação a ser recarregada."""
     while True:
         page.goto("https://www.edponline.com.br/servicos/consulta-debitos", wait_until="load")
         page.evaluate("window.scrollTo(0, document.body.scrollHeight)") 
@@ -58,6 +92,19 @@ def reload_faturas(page,numero) -> None:
             break  # Sai do loop se carregou corretamente
 
 def get_logged_context(p, mode=True, force_login=False):
+    """
+    Obtém um contexto de navegador Playwright logado no portal da EDP.
+
+    Tenta reutilizar uma sessão salva em arquivo (`edp_session.json`). Caso
+    não encontre ou force um novo login, realiza o processo de login
+    e salva a nova sessão.
+
+    Args:
+        p: O objeto sync_playwright.
+        mode: Booleano indicando se o navegador deve ser headless (True) ou visível (False). Padrão é True.
+        force_login: Booleano indicando se um novo login deve ser forcado, mesmo que uma sessão salva exista. Padrão é False.
+
+    Returns: Uma tupla contendo o objeto Browser e o objeto Context do Playwright."""
     session_path = "edp_session.json"
     browser = p.chromium.launch(headless=mode)
 
@@ -80,8 +127,19 @@ def get_logged_context(p, mode=True, force_login=False):
     logging.info("💾 Sessão salva em edp_session.json.")
     return browser, ctx
 
-
 def realizar_login(page, email: str, senha: str):
+    """
+    Realiza o processo de login no portal online da EDP utilizando Playwright.
+
+    Navega para a página de login, preenche as credenciais e tenta
+    logar. Lida com a aceitação de cookies.
+
+    Args:
+        page: O objeto Page do Playwright representando a página de login.
+        email: O e-mail para login.
+        senha: A senha para login.
+
+    Returns: True se o login for bem-sucedido (redirecionado para a página de serviços), False caso contrário."""
     logging.info("🔐 Navegando para página de login...")
     page.goto("https://www.edponline.com.br/engenheiro", wait_until="load")
     logging.info("✅ Página de login carregada.")
@@ -136,8 +194,27 @@ def realizar_login(page, email: str, senha: str):
 
     return False
 
-
 def baixar_faturas_por_instalacao(instalacoes: list[str], data_inicio: str, data_fim: str, mode: bool = True) -> list[str]:
+    """
+    Baixa faturas de energia para uma lista de números de instalação dentro de um período.
+
+    Utiliza Playwright para navegar no portal da EDP, selecionar cada instalação,
+    localizar as faturas dentro do intervalo de datas especificado e baixar
+    os arquivos PDF correspondentes.
+
+    Args:
+        instalacoes: Uma lista de strings, onde cada string é o número da instalação.
+        data_inicio: Uma string no formato "MMM-AAAA" representando a data de início
+                     do intervalo de faturas a serem baixadas (inclusivo).
+        data_fim: Uma string no formato "MMM-AAAA" representando a data de fim
+                  do intervalo de faturas a serem baixadas (inclusivo).
+        mode: Booleano indicando se o navegador Playwright deve ser headless (True) ou visível (False). Padrão é True.
+
+    Returns:
+        Uma lista de strings, onde cada string é o caminho completo para o arquivo
+        PDF da fatura baixada.
+
+    Raises: Exception: Para erros que possam ocorrer durante o processo de scraping."""
     dt_ini = ref_to_date(data_inicio)
     dt_fim = ref_to_date(data_fim)
     saved_paths: list[str] = []
@@ -177,11 +254,6 @@ def baixar_faturas_por_instalacao(instalacoes: list[str], data_inicio: str, data
                 page.goto("https://www.edponline.com.br/servicos/consulta-debitos", wait_until="load")
                 logging.info("  🔄  Página de consulta carregada.")
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                # page.wait_for_timeout(500)
-                # codInstalacaoInput.wait_for(state="visible", timeout=20000)
-                # codInstalacaoInput.fill(numero)
-                # page.wait_for_selector("#Instalacao", state="visible", timeout=25000)
-                # page.fill("#Instalacao", numero)
                 page.fill('input[name="Instalacao"]', numero)
                 btn_click = page.locator('button:has-text("Avançar")')
                 btn_click.wait_for(state="visible", timeout=20000)
@@ -190,7 +262,6 @@ def baixar_faturas_por_instalacao(instalacoes: list[str], data_inicio: str, data
                 link_click = page.locator(f'a.instalacao:has-text("{numero}")')
                 link_click.wait_for(state="visible", timeout=20000)
                 link_click.click()
-                # page.locator(f'a.instalacao:has-text("{numero}")').click()
                 # Verifica se o erro de carregamento apareceu
                 erro_carregamento = page.locator('text="Desculpe-nos! Não foi possível carregar as suas faturas"')
                 if erro_carregamento.is_visible(timeout=3000):
@@ -243,8 +314,6 @@ def baixar_faturas_por_instalacao(instalacoes: list[str], data_inicio: str, data
                         continue
 
                     logging.info(f"    ⬇️  Baixando fatura {ref}...")
-                    # card.locator('p:has-text("Visualizar fatura")').click()
-                    # page.wait_for_selector('text="2ª Via de Fatura"', timeout=15000)
                     max_retentativas = 3
                     for tentativa in range(max_retentativas):
                         try:
@@ -279,14 +348,7 @@ def baixar_faturas_por_instalacao(instalacoes: list[str], data_inicio: str, data
                         download_bt = page.locator('a:has-text("Baixar")')
                         download_bt.wait_for(state="visible", timeout=15000)
                         download_bt.click()
-                        # page.click('a:has-text("Baixar")')
                     download = dl.value
-                    # nome     = f"fatura_{i+1}_{ref}.pdf"
-                    # dest     = os.path.join(pasta, nome)
-                    # download.save_as(dest)
-                    # logging.info(f"      ✔️ Salvo em: {dest}")
-                    # saved_paths.append(dest)
-                    # download = download_info.value
                     nome = f"fatura_{ref}.pdf"
                     caminho = os.path.join(pasta_instalacao, nome)
                     download.save_as(caminho)
@@ -319,22 +381,5 @@ def baixar_faturas_por_instalacao(instalacoes: list[str], data_inicio: str, data
 
         ctx.close()
         browser.close()
-        #             try:
-        #                 page.locator('i.icon-edp-circle-error.fs-1').click(timeout=5000)
-        #             except:
-        #                 pass
-
-        #         except Exception as e:
-        #             logging.info(f"      ⚠️ Erro ao baixar fatura {i+1}: {e}")
-
-        #     # Sai da instalação
-        #     try:
-        #         btn = page.locator('a.edp-btn-dark:has-text("Sair da Instalação")').first
-        #         btn.click(); page.wait_for_timeout(1000)
-        #         logging.info("  🔄 Voltando para lista de instalações...")
-        #     except:
-        #         pass
-
-        # browser.close()
-
+        
     return saved_paths
