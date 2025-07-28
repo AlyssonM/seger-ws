@@ -154,7 +154,7 @@ def calcular_tabela_12meses(fatura_dados, tarifas, tarifa_ere, demanda_verde_oti
 
     return tabela_otimizada
 
-def calcular_tabela_ajuste(fatura_dados, tarifas_atualizado, tarifa_ere, demanda_base=570.0):
+def calcular_tabela_ajuste(fatura_dados, tarifas_atualizado, tarifa_ere, demanda_base=100, pis = None, cofins = None, icms = None):
     def formatar(valor):
         return f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
@@ -164,9 +164,9 @@ def calcular_tabela_ajuste(fatura_dados, tarifas_atualizado, tarifa_ere, demanda
     total_atualizado = 0.0
 
     # Chamada única com todo o histórico
-    total_verde, lista_verde_mensal = calcular_tarifa_verde(fatura_dados, tarifas_atualizado["verde"], tarifa_ere, demanda_base)
+    total_verde, lista_verde_mensal = calcular_tarifa_verde(fatura_dados, tarifas_atualizado["verde"], tarifa_ere, demanda_base, pis, cofins, icms)
     # total_azul, lista_azul_mensal = calcular_tarifa_azul(fatura_dados, tarifas_atualizado["azul"], tarifa_ere, [demanda_azul_p_otima, demanda_azul_fp_otima])
-
+    logging.info(f"lista_verde_mensal: {lista_verde_mensal}")
     for f in fatura_dados:
     #     ident = f.get("identificacao", {})
     #     mesref = ident.get("mes_referencia", "N/A")
@@ -261,7 +261,7 @@ def calcular_tabela_contrato_atual(
         extras = dados["componentes_extras"]
 
         # Tarifas
-        logging.info(f"Tarifas atualizadas: {tarifas_atualizado}")
+        # logging.info(f"Tarifas atualizadas: {tarifas_atualizado}")
         tusd_fp = float(tarifas_atualizado['verde']["TUSDforaPonta"])
         tusd_p = float(tarifas_atualizado['verde']["TUSDponta"])
         te_fp = float(tarifas_atualizado['verde']["TEforaPonta"])
@@ -493,7 +493,7 @@ def calcular_tabela_contrato_proposto(
         extras = dados["componentes_extras"]
 
         # Tarifas
-        logging.info(f"Tarifas atualizadas: {tarifas_atualizado}")
+        # logging.info(f"Tarifas atualizadas: {tarifas_atualizado}")
         tusd_fp = float(tarifas_atualizado['verde']["TUSDforaPonta"])
         tusd_p = float(tarifas_atualizado['verde']["TUSDponta"])
         te_fp = float(tarifas_atualizado['verde']["TEforaPonta"])
@@ -626,9 +626,9 @@ def calcular_tabela_contrato_proposto(
         total["ere"] += ere
         total["impostos"] += impostos_valor
         total["total"] += total_geral
-        logging.info(f'Total: {total["demanda"]}')
+        # logging.info(f'Total: {total["demanda"]}')
 
-    logging.info(f'Total: {total["demanda"]}')
+    # logging.info(f'Total: {total["demanda"]}')
     tabela.append({
         "data": "\\textbf{CONTRATO PROPOSTO}",
         "consumo": f"\\textbf{{{fmt(total['consumo'])}}}",

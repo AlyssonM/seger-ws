@@ -1,15 +1,29 @@
 # app.py
 from flask import Flask
+from flask_restx import Api
 from src.routes import bp as seger_bp
 
 def create_app():
     app = Flask(__name__)
-    app.register_blueprint(seger_bp)
+    
+    # Configuração do Swagger/OpenAPI
+    api = Api(
+        app,
+        version='1.0',
+        title='Seger API',
+        description='API para gestão de eficiência energética - Sistema de análise e otimização de faturas de energia',
+        doc='/swagger/',
+        prefix='/api'
+    )
+    
+    # Registra o namespace do seger
+    api.add_namespace(seger_bp, path='/seger')
+    
     return app
 
 if __name__ == "__main__":
     app = create_app()
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5001, debug=True)
 
 
 # from playwright.sync_api import sync_playwright

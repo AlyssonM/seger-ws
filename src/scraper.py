@@ -41,16 +41,17 @@ logging.basicConfig(
 
 def ref_to_date(ref: str) -> datetime:
     """
-    Converte uma string de referência de mês/ano (ex: "JAN-2023") para um objeto datetime.
+        Converte uma string de referência de mês/ano (ex: "JAN-2023") para um objeto datetime.
 
-    Similar à função no módulo routes, converte a referência textual
-    para um objeto datetime.
+        Similar à função no módulo routes, converte a referência textual
+        para um objeto datetime.
 
-    Args:
-        ref: A string no formato "MMM-AAAA" (ex: "JAN-2023").
+        Args:
+            ref: A string no formato "MMM-AAAA" (ex: "JAN-2023").
 
-    Returns:
-        Um objeto datetime representando o primeiro dia do mês e ano especificados, ou datetime.min se a string não estiver no formato esperado."""
+        Returns:
+            Um objeto datetime representando o primeiro dia do mês e ano especificados, ou datetime.min se a string não estiver no formato esperado.
+    """
     mes_map = {
         "JAN":"Jan","FEV":"Feb","MAR":"Mar","ABR":"Apr",
         "MAI":"May","JUN":"Jun","JUL":"Jul","AGO":"Aug",
@@ -65,14 +66,15 @@ def ref_to_date(ref: str) -> datetime:
 
 def reload_faturas(page,numero) -> None:
     """
-    Tenta recarregar a página de faturas para uma instalação específica no Playwright.
+        Tenta recarregar a página de faturas para uma instalação específica no Playwright.
 
-    Usado internamente para tentar contornar erros de carregamento da página
-    de faturas no portal da EDP.
+        Usado internamente para tentar contornar erros de carregamento da página
+        de faturas no portal da EDP.
 
-    Args:
-        page: O objeto Page do Playwright representando a página atual.
-        numero: O número da instalação a ser recarregada."""
+        Args:
+            page: O objeto Page do Playwright representando a página atual.
+            numero: O número da instalação a ser recarregada.
+    """
     while True:
         page.goto("https://www.edponline.com.br/servicos/consulta-debitos", wait_until="load")
         page.evaluate("window.scrollTo(0, document.body.scrollHeight)") 
@@ -93,18 +95,19 @@ def reload_faturas(page,numero) -> None:
 
 def get_logged_context(p, mode=True, force_login=False):
     """
-    Obtém um contexto de navegador Playwright logado no portal da EDP.
+        Obtém um contexto de navegador Playwright logado no portal da EDP.
 
-    Tenta reutilizar uma sessão salva em arquivo (`edp_session.json`). Caso
-    não encontre ou force um novo login, realiza o processo de login
-    e salva a nova sessão.
+        Tenta reutilizar uma sessão salva em arquivo (`edp_session.json`). Caso
+        não encontre ou force um novo login, realiza o processo de login
+        e salva a nova sessão.
 
-    Args:
-        p: O objeto sync_playwright.
-        mode: Booleano indicando se o navegador deve ser headless (True) ou visível (False). Padrão é True.
-        force_login: Booleano indicando se um novo login deve ser forcado, mesmo que uma sessão salva exista. Padrão é False.
+        Args:
+            p: O objeto sync_playwright.
+            mode: Booleano indicando se o navegador deve ser headless (True) ou visível (False). Padrão é True.
+            force_login: Booleano indicando se um novo login deve ser forcado, mesmo que uma sessão salva exista. Padrão é False.
 
-    Returns: Uma tupla contendo o objeto Browser e o objeto Context do Playwright."""
+        Returns: Uma tupla contendo o objeto Browser e o objeto Context do Playwright.
+    """
     session_path = "edp_session.json"
     browser = p.chromium.launch(headless=mode)
 
@@ -129,17 +132,18 @@ def get_logged_context(p, mode=True, force_login=False):
 
 def realizar_login(page, email: str, senha: str):
     """
-    Realiza o processo de login no portal online da EDP utilizando Playwright.
+        Realiza o processo de login no portal online da EDP utilizando Playwright.
 
-    Navega para a página de login, preenche as credenciais e tenta
-    logar. Lida com a aceitação de cookies.
+        Navega para a página de login, preenche as credenciais e tenta
+        logar. Lida com a aceitação de cookies.
 
-    Args:
-        page: O objeto Page do Playwright representando a página de login.
-        email: O e-mail para login.
-        senha: A senha para login.
+        Args:
+            page: O objeto Page do Playwright representando a página de login.
+            email: O e-mail para login.
+            senha: A senha para login.
 
-    Returns: True se o login for bem-sucedido (redirecionado para a página de serviços), False caso contrário."""
+        Returns: True se o login for bem-sucedido (redirecionado para a página de serviços), False caso contrário.
+    """
     logging.info("🔐 Navegando para página de login...")
     page.goto("https://www.edponline.com.br/engenheiro", wait_until="load")
     logging.info("✅ Página de login carregada.")
@@ -196,25 +200,26 @@ def realizar_login(page, email: str, senha: str):
 
 def baixar_faturas_por_instalacao(instalacoes: list[str], data_inicio: str, data_fim: str, mode: bool = True) -> list[str]:
     """
-    Baixa faturas de energia para uma lista de números de instalação dentro de um período.
+        Baixa faturas de energia para uma lista de números de instalação dentro de um período.
 
-    Utiliza Playwright para navegar no portal da EDP, selecionar cada instalação,
-    localizar as faturas dentro do intervalo de datas especificado e baixar
-    os arquivos PDF correspondentes.
+        Utiliza Playwright para navegar no portal da EDP, selecionar cada instalação,
+        localizar as faturas dentro do intervalo de datas especificado e baixar
+        os arquivos PDF correspondentes.
 
-    Args:
-        instalacoes: Uma lista de strings, onde cada string é o número da instalação.
-        data_inicio: Uma string no formato "MMM-AAAA" representando a data de início
-                     do intervalo de faturas a serem baixadas (inclusivo).
-        data_fim: Uma string no formato "MMM-AAAA" representando a data de fim
-                  do intervalo de faturas a serem baixadas (inclusivo).
-        mode: Booleano indicando se o navegador Playwright deve ser headless (True) ou visível (False). Padrão é True.
+        Args:
+            instalacoes: Uma lista de strings, onde cada string é o número da instalação.
+            data_inicio: Uma string no formato "MMM-AAAA" representando a data de início
+                        do intervalo de faturas a serem baixadas (inclusivo).
+            data_fim: Uma string no formato "MMM-AAAA" representando a data de fim
+                    do intervalo de faturas a serem baixadas (inclusivo).
+            mode: Booleano indicando se o navegador Playwright deve ser headless (True) ou visível (False). Padrão é True.
 
-    Returns:
-        Uma lista de strings, onde cada string é o caminho completo para o arquivo
-        PDF da fatura baixada.
+        Returns:
+            Uma lista de strings, onde cada string é o caminho completo para o arquivo
+            PDF da fatura baixada.
 
-    Raises: Exception: Para erros que possam ocorrer durante o processo de scraping."""
+        Raises: Exception: Para erros que possam ocorrer durante o processo de scraping.
+    """
     dt_ini = ref_to_date(data_inicio)
     dt_fim = ref_to_date(data_fim)
     saved_paths: list[str] = []

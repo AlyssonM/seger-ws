@@ -228,32 +228,35 @@ def analisar_eficiencia_energetica(
     tarifa_ere_atualizado,
     demanda_verde_otima,
     demanda_azul_p_otima,
-    demanda_azul_fp_otima
+    demanda_azul_fp_otima,
+    pis = None,
+    cofins = None,
+    icms = None
 ) -> Dict[str, Any]:
     """
-    Reproduz o cálculo da planilha 'Projeto Análise Tarifária – SEGER',
-    com base nos dados das faturas de energia
-    Monta as tabelas necessárias para a automação de geração do relatório
+        Reproduz o cálculo da planilha 'Projeto Análise Tarifária – SEGER',
+        com base nos dados das faturas de energia
+        Monta as tabelas necessárias para a automação de geração do relatório
 
-    Args:
-        fatura_dados: Um dicionário contendo os dados estruturados extraídos
-                      de um conjunto de faturas de energia, tipicamente obtidos da função
-                      `extrair_dados_completos_da_fatura`.
-        tarifas: Dicionário contendo os valores das tarifas referentes ao período de
-                 de faturamento dos dados para a modalidade contratada (Azul, verde, etc..)
-        tarifa_ere: Dicionário contendo os valores da tarifa ERE referentes ao período de
+        Args:
+            fatura_dados: Um dicionário contendo os dados estruturados extraídos
+                        de um conjunto de faturas de energia, tipicamente obtidos da função
+                        `extrair_dados_completos_da_fatura`.
+            tarifas: Dicionário contendo os valores das tarifas referentes ao período de
                     de faturamento dos dados para a modalidade contratada (Azul, verde, etc..)
-        tarifas_atualizado: Dicionário contendo os valores das tarifas referentes ao período corrente
-                            de faturamento da legislação para a modalidade contratada (Azul, verde, etc..)
-        tarifa_ere_atualizado: Dicionário contendo os valores da tarifa ERE referente ao período corrente
-                               de faturamento da legislação para a modalidade contratada (Azul, verde, etc..)
-        demanda_verde_otima: demanda ótima para a modalidade verde
-        demanda_azul_p_otima: demanda ótima para a modalidade azul (ponta)
-        demanda_azul_fp_otima: demanda ótima para a modalidade azul (fora ponta)
-    
-    Returns:
-        Um dicionário contendo os dados estruturados gerados a partir de um conjunto de faturas de energia,
-        contendo as tabelas necessárias para a automação de geração do relatório.
+            tarifa_ere: Dicionário contendo os valores da tarifa ERE referentes ao período de
+                        de faturamento dos dados para a modalidade contratada (Azul, verde, etc..)
+            tarifas_atualizado: Dicionário contendo os valores das tarifas referentes ao período corrente
+                                de faturamento da legislação para a modalidade contratada (Azul, verde, etc..)
+            tarifa_ere_atualizado: Dicionário contendo os valores da tarifa ERE referente ao período corrente
+                                de faturamento da legislação para a modalidade contratada (Azul, verde, etc..)
+            demanda_verde_otima: demanda ótima para a modalidade verde
+            demanda_azul_p_otima: demanda ótima para a modalidade azul (ponta)
+            demanda_azul_fp_otima: demanda ótima para a modalidade azul (fora ponta)
+        
+        Returns:
+            Um dicionário contendo os dados estruturados gerados a partir de um conjunto de faturas de energia,
+            contendo as tabelas necessárias para a automação de geração do relatório.
     """
     from .utils.tarifas import (
         calcular_tarifa_verde,
@@ -310,6 +313,7 @@ def analisar_eficiencia_energetica(
     }.items():
         add_tarifa(grupo, t)
 
+    
     # --- Tabela Consumo ---
     total_faturas = 0.0
     for f in fatura_dados:
@@ -347,7 +351,7 @@ def analisar_eficiencia_energetica(
     )
 
     res["tabela_12meses_otimizados"] = calcular_tabela_12meses(fatura_dados, tarifas_atualizado, tarifa_ere_atualizado, demanda_verde_otima, demanda_azul_p_otima, demanda_azul_fp_otima)
-    res["tabela_ajuste"] = calcular_tabela_ajuste(fatura_dados, tarifas_atualizado, tarifa_ere_atualizado)
+    res["tabela_ajuste"] = calcular_tabela_ajuste(fatura_dados, tarifas_atualizado, tarifa_ere_atualizado, pis, cofins, icms)
     res["tabela_contrato_comparado"], total_atual = calcular_tabela_contrato_atual(fatura_dados, tarifas_atualizado, tarifa_ere_atualizado, pis_aliq, cofins_aliq, icms_aliq)
     tabela_proposto, total_proposto = calcular_tabela_contrato_proposto(fatura_dados, tarifas_atualizado, tarifa_ere_atualizado, demanda_verde_otima, pis_aliq, cofins_aliq, icms_aliq)
     res["tabela_contrato_comparado"] += tabela_proposto
@@ -376,5 +380,5 @@ def analisar_eficiencia_energetica(
     )
     atualizado_aumento = ajuste_total > 0
     res.update(gerar_dados_contextuais_integrado(res, fatura_dados, ultrapassagem_ocorre, atualizado_aumento, demanda_verde_otima, demanda_azul_p_otima, demanda_azul_fp_otima))
-
+    # logging.info(f'Tabela de Tarifas: {res["tabela_tarifas"]}')
     return res

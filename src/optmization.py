@@ -14,7 +14,7 @@ import matplotlib.ticker as mtick
 from mpl_toolkits.mplot3d import Axes3D
 from src.utils.tarifas import calcular_tarifa_verde, calcular_tarifa_azul
 
-def opt_tarifa_verde(dados, tarifas, tarifa_ere):
+def opt_tarifa_verde(dados, tarifas, tarifa_ere, down_bound, up_bound):
     """
     Realiza a otimização de custo para a modalidade de tarifa verde.
 
@@ -39,7 +39,7 @@ def opt_tarifa_verde(dados, tarifas, tarifa_ere):
     """
     resultado = minimize_scalar(
         lambda d: calcular_tarifa_verde(dados, tarifas, tarifa_ere, d)[0],
-        bounds=(30, 1000),
+        bounds=(30, up_bound),
         method='bounded'
     )
     demanda_otima = round(resultado.x)
@@ -67,7 +67,7 @@ def opt_tarifa_verde(dados, tarifas, tarifa_ere):
     # custo_otimo = resultado[1]
     
     
-    demanda_range = np.linspace(100, 1000, 50)
+    demanda_range = np.linspace(down_bound, up_bound, 50)
     custos_verde = [calcular_tarifa_verde(dados, tarifas, tarifa_ere, d)[0] for d in demanda_range]
     plt.figure(figsize=(10, 6))
     plt.plot(demanda_range,custos_verde, label='Custo Total', color='green')
@@ -91,7 +91,7 @@ def opt_tarifa_verde(dados, tarifas, tarifa_ere):
     return result
 
 
-def opt_tarifa_azul(dados, tarifas, tarifa_ere):
+def opt_tarifa_azul(dados, tarifas, tarifa_ere, up_bound):
     """
     Realiza a otimização de custo para a modalidade de tarifa azul.
 
@@ -118,7 +118,7 @@ def opt_tarifa_azul(dados, tarifas, tarifa_ere):
     resultado = minimize(
         lambda dm: calcular_tarifa_azul(dados, tarifas, tarifa_ere, dm)[0],
         x0=[100, 100],
-        bounds=[(30, 1000), (30, 1000)], 
+        bounds=[(30, up_bound), (30, up_bound)], 
         method='Powell'
     )
     demanda_p_otima = round(resultado.x[0])
@@ -127,8 +127,8 @@ def opt_tarifa_azul(dados, tarifas, tarifa_ere):
 
     
     # Geração de grade de valores
-    x = np.linspace(30, 1000, 50)  # Demanda ponta
-    y = np.linspace(30, 1000, 50)  # Demanda fora de ponta
+    x = np.linspace(30, up_bound, 50)  # Demanda ponta
+    y = np.linspace(30, up_bound, 50)  # Demanda fora de ponta
     X, Y = np.meshgrid(x, y)
     Z = np.array([
         [calcular_tarifa_azul(dados, tarifas, tarifa_ere, [dp, dfp])[0] for dp in x]

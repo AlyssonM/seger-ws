@@ -1,6 +1,7 @@
 playwright==1.43.0
 python-dotenv
 flask
+flask-restx
 requests
 PyPDF2>=3.0.0
 pdfplumber

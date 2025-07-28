@@ -84,7 +84,7 @@ def get_tarifas_filtradas(
     except Exception as e:
         return {"error": f"Erro ao filtrar dados: {e}"}
 
-def calcular_tarifa_verde(fatura_dados, tarifas, tarifa_ere, demanda_contratada = None):
+def calcular_tarifa_verde(fatura_dados, tarifas, tarifa_ere, demanda_contratada = None, pis=None, cofins=None, icms=None):
     fatura_total = 0
     faturas_mensais = []
     # ---------- Cálculo das médias de impostos ---------- #
@@ -115,9 +115,25 @@ def calcular_tarifa_verde(fatura_dados, tarifas, tarifa_ere, demanda_contratada 
     icms_media = icms_total / count_icms if count_icms else 0.0
 
     # Para uso nos cálculos posteriores (convertendo para frações)
-    pis_aliq = pis_media
-    cofins_aliq = cofins_media
-    icms_aliq = icms_media*100
+    if(pis is not None):
+        pis_aliq = pis
+    else:
+        pis_aliq = pis_media
+    
+    if(cofins is not None):
+        cofins_aliq = cofins
+    else:
+        cofins_aliq = cofins_media
+    
+    if(icms is not None):
+        icms_aliq = icms
+    else:
+        icms_aliq = icms_media
+    
+    # logging.info(f"pis:{pis_aliq} cofins:{cofins_aliq} icms: {icms_aliq}")
+    # pis_aliq = pis_media
+    # cofins_aliq = cofins_media
+    # icms_aliq = icms_media*100
 
     for dados in fatura_dados:
         # logging.info(f"Mes: {dados['identificacao']['mes_referencia']}")
@@ -134,7 +150,7 @@ def calcular_tarifa_verde(fatura_dados, tarifas, tarifa_ere, demanda_contratada 
         te_p = float(tarifas["TEponta"])
     
         demanda_fp_tarifa = float(tarifas["DemandaForaPonta"])  # mesma para ponta e fora
-        # # logging.info(f"SCEE = {energia_injetada}")
+        # logging.info(f"SCEE = {energia_injetada}")
         energia_fp = consumo["fora_ponta_kwh"] * (tusd_fp + te_fp)
         energia_p = consumo["ponta_kwh"] * (tusd_p + te_p)
         energia_compensada = energia_injetada * (tusd_fp + te_fp)
@@ -236,8 +252,11 @@ def calcular_tarifa_verde(fatura_dados, tarifas, tarifa_ere, demanda_contratada 
         total_sem_imposto = energia_total + demanda_total + bandeira_liquido - energia_compensada + energia_reativa_ex
         # logging.info(f"custo total sem imposto: {total_sem_imposto}")
 
-        total_pis_cofins = total_sem_imposto * (pis_aliq + cofins_aliq) / 100
-        # logging.info(f"total pis+cofins = {total_pis_cofins}")
+        total_pis = (total_sem_imposto/(1 - (pis_aliq + cofins_aliq + icms_aliq)/100))*pis_aliq/100
+        total_cofins = (total_sem_imposto/(1 - (pis_aliq + cofins_aliq + icms_aliq)/100))*cofins_aliq/100
+        total_pis_cofins = total_pis + total_cofins
+        # logging.info(f"total pis = {total_pis}")
+        # logging.info(f"total cofins = {total_cofins}")
 
         total_ICMS = ((total_sem_imposto - (custo_demanda_fp_nao_utilizada)+(total_pis_cofins*(1 - (custo_demanda_fp_nao_utilizada)/total_sem_imposto)))/(1 - (icms_aliq) / 100))*(icms_aliq / 100)
         # logging.info(f"total icms = {total_ICMS}")
@@ -260,6 +279,18 @@ def calcular_tarifa_verde(fatura_dados, tarifas, tarifa_ere, demanda_contratada 
         fatura_total += fatura_mes
         faturas_mensais.append({
             "mes": dados["identificacao"].get("mes_referencia", "N/A"),
+            "energia_total": energia_total,
+            "demanda_total": demanda_total,
+            "energia_compensada": energia_compensada,
+            "energia_reativa_excedente": energia_reativa_ex,
+            "bandeira_liquido": bandeira_liquido,
+            "iluminacao": iluminacao,
+            "irrf_comp": irrf_comp,
+            "juros": juros,
+            "multa": multa,
+            "total_sem_imposto": total_sem_imposto,
+            "total_pis_cofins": total_pis_cofins,
+            "total_ICMS": total_ICMS,
             "valor_fatura": round(fatura_mes, 2)
         })
         

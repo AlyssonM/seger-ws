@@ -23,19 +23,19 @@ NUMBER = r"\d+[.,]\d+|\d{1,3}(?:\.\d{3})*(?:[.,]\d+)?|\d+"
 DECIMAL = r"-?\d{1,3}(?:\.\d{3})*(?:,\d+)?-?"
 
 def _clean_num(n: str | None) -> float | None:
- """
- Limpa e converte uma string numérica para float.
+    """
+        Limpa e converte uma string numérica para float.
 
- Remove espaços em branco, trata sinais negativos no final e normaliza
- separadores decimais e de milhar para o formato float do Python.
+        Remove espaços em branco, trata sinais negativos no final e normaliza
+        separadores decimais e de milhar para o formato float do Python.
 
- Args:
- n: A string numérica a ser limpa e convertida. Pode ser None.
+        Args:
+        n: A string numérica a ser limpa e convertida. Pode ser None.
 
- Returns:
- O valor numérico convertido para float, ou None se a entrada for
- None ou não puder ser convertida.
- """
+        Returns:
+        O valor numérico convertido para float, ou None se a entrada for
+        None ou não puder ser convertida.
+    """
     if not n:
         return None
     s = n.strip()
@@ -54,21 +54,21 @@ def _clean_num(n: str | None) -> float | None:
 
 def _find(pat: str, text: str, flags=0, group: int | str = 1, default=None):
     m = re.search(pat, text, flags)
- """
- Busca um padrão regex no texto e retorna a primeira ocorrência de um grupo.
+    """
+        Busca um padrão regex no texto e retorna a primeira ocorrência de um grupo.
 
- Args:
- pat: O padrão regex a ser buscado.
- text: O texto onde buscar o padrão.
- flags: Flags para a busca regex (ex: re.IGNORECASE). Padrão é 0.
- group: O índice ou nome do grupo a ser retornado. Padrão é 1.
- default: O valor a ser retornado se o padrão não for encontrado.
- Padrão é None.
+        Args:
+        pat: O padrão regex a ser buscado.
+        text: O texto onde buscar o padrão.
+        flags: Flags para a busca regex (ex: re.IGNORECASE). Padrão é 0.
+        group: O índice ou nome do grupo a ser retornado. Padrão é 1.
+        default: O valor a ser retornado se o padrão não for encontrado.
+        Padrão é None.
 
- Returns:
- O conteúdo do grupo especificado na primeira ocorrência do padrão,
- ou o valor padrão se o padrão não for encontrado.
- """
+        Returns:
+        O conteúdo do grupo especificado na primeira ocorrência do padrão,
+        ou o valor padrão se o padrão não for encontrado.
+    """
     if not m:
         return default
     try:
@@ -78,23 +78,34 @@ def _find(pat: str, text: str, flags=0, group: int | str = 1, default=None):
 
 
 def _findall(pat: str, text: str, flags=0) -> List[Tuple[str, ...]]:
+    """
+        Encontra todas as ocorrências de um padrão regex e retorna os grupos.
+
+        Args:
+        pat: O padrão regex a ser buscado.
+        text: O texto onde buscar o padrão.
+        flags: Flags para a busca regex (ex: re.IGNORECASE). Padrão é 0.
+
+        Returns:
+        Uma lista de tuplas, onde cada tupla contém os grupos capturados
+        de uma ocorrência do padrão.
+    """
     return [m.groups() for m in re.finditer(pat, text, flags)]
- """
- Encontra todas as ocorrências de um padrão regex e retorna os grupos.
-
- Args:
- pat: O padrão regex a ser buscado.
- text: O texto onde buscar o padrão.
- flags: Flags para a busca regex (ex: re.IGNORECASE). Padrão é 0.
-
- Returns:
- Uma lista de tuplas, onde cada tupla contém os grupos capturados
- de uma ocorrência do padrão.
- """
-
 
 def formatar_proprio_title(texto: str) -> str:
     # Corrige falta de espaço após vírgulas (ex: ",123" → ", 123")
+    """
+        Formata um texto para um estilo de título específico.
+
+        Corrige espaços após vírgulas, expande abreviações comuns, aplica
+        capitalização com exceções para preposições/conjunções e corrige
+        siglas específicas para maiúsculas.
+
+        Args:
+        texto: O texto a ser formatado.
+        Returns:
+        O texto formatado.
+    """
     texto = re.sub(r",(?=\S)", ", ", texto)
 
     # Expansão de abreviações comuns (apenas se forem palavras isoladas)
@@ -108,18 +119,6 @@ def formatar_proprio_title(texto: str) -> str:
         r'\bAdm\b': 'Administrativo',
     }
     for padrao, subst in abrevs.items():
- """
- Formata um texto para um estilo de título específico.
-
- Corrige espaços após vírgulas, expande abreviações comuns, aplica
- capitalização com exceções para preposições/conjunções e corrige
- siglas específicas para maiúsculas.
-
- Args:
- texto: O texto a ser formatado.
- Returns:
- O texto formatado.
- """
         texto = re.sub(padrao, subst, texto, flags=re.IGNORECASE)
 
     # Aplica capitalização
@@ -152,21 +151,21 @@ def formatar_proprio_title(texto: str) -> str:
 
 # ╭────────────────────  NÚCLEO DE EXTRAÇÃO  ───────────────────╮
 def extrair_dados_completos_da_fatura_regex(texto: str) -> Dict[str, Any]:
- """
- Extrai dados completos de uma fatura de energia em formato de texto usando regex.
+    """
+        Extrai dados completos de uma fatura de energia em formato de texto usando regex.
 
- Analisa o texto da fatura para extrair informações como identificação,
- leituras, consumo, demanda, energia reativa, impostos, tarifas e
- componentes extras, utilizando uma série de padrões regex.
+        Analisa o texto da fatura para extrair informações como identificação,
+        leituras, consumo, demanda, energia reativa, impostos, tarifas e
+        componentes extras, utilizando uma série de padrões regex.
 
- Args:
- texto: O texto completo da fatura de energia.
+        Args:
+        texto: O texto completo da fatura de energia.
 
- Returns:
- Um dicionário contendo os dados extraídos da fatura, organizados
- em chaves como 'identificacao', 'leituras', 'consumo_ativo', etc.
- Os valores podem ser strings, números, listas ou dicionários.
- """
+        Returns:
+        Um dicionário contendo os dados extraídos da fatura, organizados
+        em chaves como 'identificacao', 'leituras', 'consumo_ativo', etc.
+        Os valores podem ser strings, números, listas ou dicionários.
+    """
 
     out: Dict[str, Any] = {
         "identificacao": {},
@@ -586,36 +585,36 @@ def extrair_dados_completos_da_fatura_regex(texto: str) -> Dict[str, Any]:
 
     out["componentes_extras"] = extras
 
-    logging.info(f"Extrações: {out}")
+    # logging.info(f"Extrações: {out}")
     return out
    
 # ╭────────────────────  UTIL / CLI  ───────────────────╮
 def pdf_to_text(pdf: Path) -> str:
- """
- Extrai texto de um arquivo PDF.
+    """
+        Extrai texto de um arquivo PDF.
 
- Args:
- pdf: O objeto Path representando o caminho para o arquivo PDF.
+        Args:
+        pdf: O objeto Path representando o caminho para o arquivo PDF.
 
- Returns:
- Uma string contendo o texto extraído de todas as páginas do PDF,
- com quebras de linha entre as páginas.
- """
+        Returns:
+        Uma string contendo o texto extraído de todas as páginas do PDF,
+        com quebras de linha entre as páginas.
+    """
 
     reader = PdfReader(pdf)
     return "\n".join(p.extract_text() or "" for p in reader.pages)
 
 
 def main() -> None:
- """
- Função principal para execução do parser via linha de comando.
+    """
+        Função principal para execução do parser via linha de comando.
 
- Lê um arquivo PDF especificado como argumento, extrai o texto,
- processa com o parser regex e imprime os dados extraídos.
+        Lê um arquivo PDF especificado como argumento, extrai o texto,
+        processa com o parser regex e imprime os dados extraídos.
 
- Returns:
- None
- """
+        Returns:
+        None
+    """
     if len(sys.argv) < 2:
         logging.error("Uso: python edp_invoice_parser.py <fatura.pdf>", file=sys.stderr); sys.exit(1)
     pdf = Path(sys.argv[1])
