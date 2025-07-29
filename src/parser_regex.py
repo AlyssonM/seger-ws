@@ -12,6 +12,7 @@ e uma função principal para extrair dados completos da fatura.
 
 import json, re, sys
 import logging
+parser_logger = logging.getLogger("parser")
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -585,7 +586,7 @@ def extrair_dados_completos_da_fatura_regex(texto: str) -> Dict[str, Any]:
 
     out["componentes_extras"] = extras
 
-    # logging.info(f"Extrações: {out}")
+    parser_logger.info(f"Extrações: {out}")
     return out
    
 # ╭────────────────────  UTIL / CLI  ───────────────────╮
@@ -616,14 +617,14 @@ def main() -> None:
         None
     """
     if len(sys.argv) < 2:
-        logging.error("Uso: python edp_invoice_parser.py <fatura.pdf>", file=sys.stderr); sys.exit(1)
+        parser_logger.error("Uso: python edp_invoice_parser.py <fatura.pdf>", file=sys.stderr); sys.exit(1)
     pdf = Path(sys.argv[1])
     if not pdf.exists():
-        logging.error(f"Arquivo não encontrado: {pdf}", file=sys.stderr); sys.exit(1)
+        parser_logger.error(f"Arquivo não encontrado: {pdf}", file=sys.stderr); sys.exit(1)
 
     texto = pdf_to_text(pdf)
     dados = extrair_dados_completos_da_fatura_regex(texto)
-    logging.info(json.dumps(dados, ensure_ascii=False, indent=2))
+    parser_logger.info(json.dumps(dados, ensure_ascii=False, indent=2))
 
 if __name__ == "__main__":
     main()

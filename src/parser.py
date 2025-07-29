@@ -16,6 +16,12 @@ from datetime import date
 import re
 import logging
 
+parser_logger = logging.getLogger("parser")
+parser_logger.setLevel(logging.INFO)
+handler = logging.FileHandler("src/logs/parser.log")
+handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+parser_logger.addHandler(handler)
+
 # 1) Cliente Gemini configurado via API key
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"), http_options=types.HttpOptions(api_version='v1alpha'))
 
@@ -77,7 +83,7 @@ def extrair_dados_completos_da_fatura(
         except Exception as e:
             import traceback
             traceback_str = traceback.format_exc()
-            logging.error("❌ ERRO ao aplicar regex:\n", traceback_str)
+            parser_logger.error("❌ ERRO ao aplicar regex:\n", traceback_str)
             return {"error": f"Erro ao aplicar regex: {str(e)}"}
 
     # 2) Monta conteúdo no formato chat
@@ -214,171 +220,8 @@ def extrair_dados_completos_da_fatura(
     # 4) Parse do JSON retornado
     try:
         clean_text = re.sub(r"^```json\s*|\s*```$", "", response.text.strip(), flags=re.MULTILINE)
-        logging.info(f"resposta do modelo:\n{clean_text}")
+        parser_logger.info(f"resposta do modelo:\n{clean_text}")
         return json.loads(clean_text)
     except json.JSONDecodeError:
-        logging.error("❌ JSON mal formatado retornado pelo modelo:\n", response.text)
+        parser_logger.error("❌ JSON mal formatado retornado pelo modelo:\n", response.text)
         return {"error": "JSON decoding error", "raw_response": response.text}
-
-def analisar_eficiencia_energetica(
-    fatura_dados: List[Dict[str, Any]],
-    tarifas,
-    tarifa_ere,
-    tarifas_atualizado,
-    tarifa_ere_atualizado,
-    demanda_verde_otima,
-    demanda_azul_p_otima,
-    demanda_azul_fp_otima,
-    pis = None,
-    cofins = None,
-    icms = None
-) -> Dict[str, Any]:
-    """
-        Reproduz o cálculo da planilha 'Projeto Análise Tarifária – SEGER',
-        com base nos dados das faturas de energia
-        Monta as tabelas necessárias para a automação de geração do relatório
-
-        Args:
-            fatura_dados: Um dicionário contendo os dados estruturados extraídos
-                        de um conjunto de faturas de energia, tipicamente obtidos da função
-                        `extrair_dados_completos_da_fatura`.
-            tarifas: Dicionário contendo os valores das tarifas referentes ao período de
-                    de faturamento dos dados para a modalidade contratada (Azul, verde, etc..)
-            tarifa_ere: Dicionário contendo os valores da tarifa ERE referentes ao período de
-                        de faturamento dos dados para a modalidade contratada (Azul, verde, etc..)
-            tarifas_atualizado: Dicionário contendo os valores das tarifas referentes ao período corrente
-                                de faturamento da legislação para a modalidade contratada (Azul, verde, etc..)
-            tarifa_ere_atualizado: Dicionário contendo os valores da tarifa ERE referente ao período corrente
-                                de faturamento da legislação para a modalidade contratada (Azul, verde, etc..)
-            demanda_verde_otima: demanda ótima para a modalidade verde
-            demanda_azul_p_otima: demanda ótima para a modalidade azul (ponta)
-            demanda_azul_fp_otima: demanda ótima para a modalidade azul (fora ponta)
-        
-        Returns:
-            Um dicionário contendo os dados estruturados gerados a partir de um conjunto de faturas de energia,
-            contendo as tabelas necessárias para a automação de geração do relatório.
-    """
-    from .utils.tarifas import (
-        calcular_tarifa_verde,
-        calcular_tarifa_azul,
-        calcular_tarifa_bt,
-    )
-    from .utils.faturamento import (
-        _pega_componente,
-        gerar_resumo_proposta,
-        gerar_dados_contextuais_integrado,
-        formatar,
-        format_real,
-        format_kw,
-        media_impostos
-    )
-
-    impostos = media_impostos(fatura_dados)
-    pis_aliq = impostos["pis"]
-    cofins_aliq = impostos["cofins"]
-    icms_aliq = impostos["icms"]
-
-    res: Dict[str, Any] = {
-        "tabela_consumo": [],
-        "tabela_tarifas": [],
-        "tabela_ajuste": [],
-        "tabela_12meses_otimizados": [],
-        "tabela_contrato_comparado": [],
-        "resumo_proposta": [],
-    }
-
-    # --- Tabela Tarifas ---
-    def add_tarifa(grupo, t):
-        def taxa(x): return f"{x:.5f}".replace('.', ',')
-        def demanda(x): return f"{x:.2f}".replace('.', ',')
-        consumo_fp = taxa(t.get("TEforaPonta", 0.0) + t.get("TUSDforaPonta", 0.0))
-        consumo_p = taxa(t.get("TEponta", 0.0) + t.get("TUSDponta", 0.0))
-        tarifa = {
-            "grupo": grupo,
-            "consumo_ponta": consumo_p if grupo != "BT Optante B3" else consumo_fp,
-            "consumo_fora_ponta": consumo_fp,
-            "demanda_ponta": demanda(t.get("DemandaPonta", 0.0)) if grupo == "A AZUL A4" else "-",
-            "demanda_fora": demanda(t.get("DemandaForaPonta", 0.0)) if grupo != "BT Optante B3" else "-",
-            "ere": str(tarifa_ere),
-            "pis": f"{pis_aliq:.2f}".replace('.', ','),
-            "cofins": f"{cofins_aliq:.2f}".replace('.', ','),
-            "icms": f"{icms_aliq:.2f}".replace('.', ',')
-        }
-        res["tabela_tarifas"].append(tarifa)
-
-    for grupo, t in {
-        "A VERDE A4": tarifas_atualizado.get("verde", {}),
-        "A AZUL A4": tarifas_atualizado.get("azul", {}),
-        "BT Optante B3": tarifas_atualizado.get("convencional", {})
-    }.items():
-        add_tarifa(grupo, t)
-
-    
-    # --- Tabela Consumo ---
-    total_faturas = 0.0
-    for f in fatura_dados:
-        ident = f.get("identificacao", {})
-        mes = ident.get("mes_referencia", "N/A")
-        consumo = f.get("consumo_ativo", {})
-        demanda = f.get("demanda", {})
-        ere = _pega_componente(f, "ere") or {"valor_total": 0.0}
-        dmax_fponta = next((d["valor_kw"] for d in demanda.get("maxima", []) if d["periodo"] == "fora_ponta"), 0.0)
-        dmax_ponta = next((d["valor_kw"] for d in demanda.get("maxima", []) if d["periodo"] == "ponta"), 0.0)
-        dmcr_ponta = next((d["valor_kw"] for d in demanda.get("dmcr", []) if d["periodo"] == "ponta"), 0.0)
-        dmcr_fora = next((d["valor_kw"] for d in demanda.get("dmcr", []) if d["periodo"] == "fora_ponta"), demanda.get("fora_ponta_kw", 0.0))
-        valor = f.get("valores_totais", {}).get("valor_total_fatura", 0.0)
-
-        res["tabela_consumo"].append({
-            "data": mes.lower().replace("/20", "/")[0:3] + mes[-2:],
-            "demanda_ponta": formatar(dmax_ponta),
-            "demanda_fora_ponta": formatar(dmax_fponta),
-            "energia_ponta": formatar(consumo.get("ponta_kwh", 0.0)),
-            "energia_fora_ponta": formatar(consumo.get("fora_ponta_kwh", 0.0)),
-            "energia_injetada": formatar(consumo.get("energia_injetada_kwh",0.0)),
-            "ere": formatar(ere["valor_total"]),
-            "valor_total": formatar(valor)
-        })
-        total_faturas += valor
-
-    res["total_energia"] = formatar(total_faturas)
-
-    # --- Tabelas Otimizadas, Ajustes, Contratos ---
-    from .utils.faturamento import (
-        calcular_tabela_12meses,
-        calcular_tabela_ajuste,
-        calcular_tabela_contrato_atual,
-        calcular_tabela_contrato_proposto
-    )
-
-    res["tabela_12meses_otimizados"] = calcular_tabela_12meses(fatura_dados, tarifas_atualizado, tarifa_ere_atualizado, demanda_verde_otima, demanda_azul_p_otima, demanda_azul_fp_otima)
-    res["tabela_ajuste"] = calcular_tabela_ajuste(fatura_dados, tarifas_atualizado, tarifa_ere_atualizado, pis, cofins, icms)
-    res["tabela_contrato_comparado"], total_atual = calcular_tabela_contrato_atual(fatura_dados, tarifas_atualizado, tarifa_ere_atualizado, pis_aliq, cofins_aliq, icms_aliq)
-    tabela_proposto, total_proposto = calcular_tabela_contrato_proposto(fatura_dados, tarifas_atualizado, tarifa_ere_atualizado, demanda_verde_otima, pis_aliq, cofins_aliq, icms_aliq)
-    res["tabela_contrato_comparado"] += tabela_proposto
-    # --- Ajustes finais ---
-    try:
-        linha_total = next((l for l in res["tabela_ajuste"] if "TOTAL" in l["mes"].upper()), None)
-        if linha_total:
-            atualizado = float(linha_total["atualizado"].replace(".", "").replace(",", "."))
-            realizado = float(linha_total["realizado"].replace(".", "").replace(",", "."))
-            acrescimo = atualizado - realizado
-            percentual = (acrescimo / realizado) * 100 if realizado else 0
-            res["ajuste_acrescimo"] = formatar(acrescimo)
-            res["ajuste_percentual"] = f"{percentual:.2f}".replace(".", ",")
-        else:
-            res["ajuste_acrescimo"] = "0,00"
-            res["ajuste_percentual"] = "0,00"
-    except:
-        res["ajuste_acrescimo"] = "-1,00"
-        res["ajuste_percentual"] = "-1,00"
-
-    res["resumo_proposta"] = gerar_resumo_proposta(demanda_verde_otima, res["tabela_contrato_comparado"])
-    ultrapassagem_ocorre = True if total_atual["ultrapassagem"] > 0 else False
-    ajuste_total = next(
-        (linha["ajuste"] for linha in res["tabela_ajuste"] if linha["mes"] == "TOTAL"),
-        0  # valor padrão caso não encontre
-    )
-    atualizado_aumento = ajuste_total > 0
-    res.update(gerar_dados_contextuais_integrado(res, fatura_dados, ultrapassagem_ocorre, atualizado_aumento, demanda_verde_otima, demanda_azul_p_otima, demanda_azul_fp_otima))
-    # logging.info(f'Tabela de Tarifas: {res["tabela_tarifas"]}')
-    return res

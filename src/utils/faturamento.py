@@ -1,7 +1,8 @@
 from datetime import date
 from typing import List, Dict, Tuple, Any, Optional
 from .tarifas import calcular_tarifa_verde, calcular_tarifa_azul, calcular_tarifa_bt
-import logging
+from flask import current_app
+
 
 def _pega_componente(fatura: Dict[str, Any], termo: str) -> Optional[Dict[str, Any]]:
     """Retorna o 1º componente_extra cujo texto contenha <termo>."""
@@ -166,7 +167,7 @@ def calcular_tabela_ajuste(fatura_dados, tarifas_atualizado, tarifa_ere, demanda
     # Chamada única com todo o histórico
     total_verde, lista_verde_mensal = calcular_tarifa_verde(fatura_dados, tarifas_atualizado["verde"], tarifa_ere, demanda_base, pis, cofins, icms)
     # total_azul, lista_azul_mensal = calcular_tarifa_azul(fatura_dados, tarifas_atualizado["azul"], tarifa_ere, [demanda_azul_p_otima, demanda_azul_fp_otima])
-    logging.info(f"lista_verde_mensal: {lista_verde_mensal}")
+    current_app.logger.debug(f"lista_verde_mensal: {lista_verde_mensal}")
     for f in fatura_dados:
     #     ident = f.get("identificacao", {})
     #     mesref = ident.get("mes_referencia", "N/A")

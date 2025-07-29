@@ -28,6 +28,7 @@ ENV/
 # Variáveis de ambiente
 .env
 .env.*
+.seger 
 
 # Playwright downloads temporários
 playwright-report/
@@ -38,6 +39,9 @@ test-results/
 faturas_edp/
 *.pdf
 
+# Local Data
+data/*
+
 # Pipenv, Poetry ou outras dependências específicas
 Pipfile.lock
 poetry.lock
@@ -45,3 +49,7 @@ poetry.lock
 # Windows
 Thumbs.db
 ehthumbs.db
+
+# Claude & Gemini .md
+CLAUDE.md
+GEMINI.md

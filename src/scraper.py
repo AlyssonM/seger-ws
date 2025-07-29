@@ -32,12 +32,12 @@ LOGIN_SENHA = os.getenv("EDP_LOGIN_SENHA", "")
 log_file = os.path.join(LOG_DIR, "scraper_edp.log")
 os.makedirs(LOG_DIR, exist_ok=True)  # Garante que o diretório existe
 
-logging.basicConfig(
-    filename=log_file,
-    filemode='a',
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    level=logging.INFO  # ou DEBUG para mais verbosidade
-)
+scraper_logger = logging.getLogger("scraper")
+scraper_logger.setLevel(logging.INFO)
+handler = logging.FileHandler(log_file)
+handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+scraper_logger.addHandler(handler)
+
 
 def ref_to_date(ref: str) -> datetime:
     """
@@ -85,7 +85,7 @@ def reload_faturas(page,numero) -> None:
         # Verifica se o erro de carregamento apareceu
         erro_carregamento = page.locator('text="Desculpe-nos! Não foi possível carregar as suas faturas"')
         if erro_carregamento.is_visible(timeout=3000):
-            logging.warning("  ⚠️ Erro ao carregar faturas. Tentando novamente...")
+            scraper_logger.warning("  ⚠️ Erro ao carregar faturas. Tentando novamente...")
             page.go_back()
             page.wait_for_timeout(3000)
             continue  # Tenta novamente
@@ -112,7 +112,7 @@ def get_logged_context(p, mode=True, force_login=False):
     browser = p.chromium.launch(headless=mode)
 
     if not force_login and os.path.exists(session_path):
-        logging.info("♻️ Sessão encontrada. Utilizando sessão salva.")
+        scraper_logger.info("♻️ Sessão encontrada. Utilizando sessão salva.")
         ctx = browser.new_context(
             accept_downloads=True,
             storage_state=session_path
@@ -120,14 +120,14 @@ def get_logged_context(p, mode=True, force_login=False):
         return browser, ctx
 
     # Caso contrário, cria nova sessão e realiza login
-    logging.info("🔁 Criando nova sessão com login.")
+    scraper_logger.info("🔁 Criando nova sessão com login.")
     ctx = browser.new_context(accept_downloads=True)
     page = ctx.new_page()
     realizar_login(page, LOGIN_EMAIL, LOGIN_SENHA)
 
     # Salva a sessão após login bem-sucedido
     ctx.storage_state(path=session_path)
-    logging.info("💾 Sessão salva em edp_session.json.")
+    scraper_logger.info("💾 Sessão salva em edp_session.json.")
     return browser, ctx
 
 def realizar_login(page, email: str, senha: str):
@@ -144,29 +144,29 @@ def realizar_login(page, email: str, senha: str):
 
         Returns: True se o login for bem-sucedido (redirecionado para a página de serviços), False caso contrário.
     """
-    logging.info("🔐 Navegando para página de login...")
+    scraper_logger.info("🔐 Navegando para página de login...")
     page.goto("https://www.edponline.com.br/engenheiro", wait_until="load")
-    logging.info("✅ Página de login carregada.")
+    scraper_logger.info("✅ Página de login carregada.")
 
     # Tenta aceitar cookies ou ignora se não for possível
     try:
         page.locator("button#onetrust-accept-btn-handler").click(timeout=3000)
         page.wait_for_timeout(1000)
-        logging.info("🍪 Cookies aceitos.")
+        scraper_logger.info("🍪 Cookies aceitos.")
     except:
         try:
             # Força remoção via JS se overlay estiver atrapalhando clique
             page.evaluate("document.getElementById('onetrust-consent-sdk')?.remove()")
-            logging.info("🧹 Overlay de cookies removido via JS.")
+            scraper_logger.info("🧹 Overlay de cookies removido via JS.")
         except:
-            logging.warning("⚠️ Não foi possível lidar com cookies. Continuando...")
+            scraper_logger.warning("⚠️ Não foi possível lidar com cookies. Continuando...")
 
     # Tenta selecionar opção "Pessoa Física"
     try:
         page.locator('label[for="option-1"]').click(timeout=5000)
-        logging.info("🧑‍💼 Opção Pessoa Física selecionada.")
+        scraper_logger.info("🧑‍💼 Opção Pessoa Física selecionada.")
     except Exception as e:
-        logging.error(f"❌ Erro ao selecionar Pessoa Física: {e}")
+        scraper_logger.error(f"❌ Erro ao selecionar Pessoa Física: {e}")
         return False
     email_input = page.locator('input#Email')
     senha_input = page.locator('input[type="password"]')
@@ -178,23 +178,23 @@ def realizar_login(page, email: str, senha: str):
         senha_input.fill(senha)
         page.keyboard.press("Tab")
         
-        logging.info("✉️ E-mail e 🔒 senha preenchidos.")
+        scraper_logger.info("✉️ E-mail e 🔒 senha preenchidos.")
 
         # Aguarda botão de acesso
         btn_acessar = page.locator("button#acessar:enabled")
         btn_acessar.wait_for(state="visible", timeout=7000)
         btn_acessar.click()
-        logging.info("🚪 Login enviado, aguardando redirecionamento...")
+        scraper_logger.info("🚪 Login enviado, aguardando redirecionamento...")
 
         # Espera redirecionamento após login
         for _ in range(50):
             if "/servicos" in page.url:
-                logging.info("✅ Login realizado com sucesso!")
+                scraper_logger.info("✅ Login realizado com sucesso!")
                 return True
             page.wait_for_timeout(300)
 
     except Exception as e:
-        logging.error(f"❌ Erro durante login: {e}")
+        scraper_logger.error(f"❌ Erro durante login: {e}")
 
     return False
 
@@ -231,19 +231,19 @@ def baixar_faturas_por_instalacao(instalacoes: list[str], data_inicio: str, data
         # Verifica se a sessão está válida
         page.goto("https://www.edponline.com.br/servicos/consulta-debitos", wait_until="load")
         if "/servicos" not in page.url:
-            logging.info("🔒 Sessão expirada. Realizando login novamente.")
+            scraper_logger.info("🔒 Sessão expirada. Realizando login novamente.")
             realizar_login(page, LOGIN_EMAIL, LOGIN_SENHA)
             ctx.storage_state(path="edp_session.json")
 
         sair_instalacao = page.locator('a.edp-btn-dark:has-text("Sair da Instalação")')
         if sair_instalacao.is_visible(timeout=5000):
             sair_instalacao.click()
-            logging.info("↩️ Sessão ativa: saída da instalação realizada.")
+            scraper_logger.info("↩️ Sessão ativa: saída da instalação realizada.")
         else:
-            logging.info("✅ Sessão ativa: nenhuma instalação estava aberta.")
+            scraper_logger.info("✅ Sessão ativa: nenhuma instalação estava aberta.")
         
         for numero in instalacoes:
-            logging.info(f"Processando instalação: {numero}")
+            scraper_logger.info(f"Processando instalação: {numero}")
             pasta_instalacao = os.path.join(BASE_DIR, numero)
             os.makedirs(pasta_instalacao, exist_ok=True)
 
@@ -253,24 +253,24 @@ def baixar_faturas_por_instalacao(instalacoes: list[str], data_inicio: str, data
             
             while tentativa < max_tentativas:
                 tentativa += 1
-                logging.info(f"  🔁 Tentativa {tentativa} para carregar faturas...")
+                scraper_logger.info(f"  🔁 Tentativa {tentativa} para carregar faturas...")
 
                 # Vai para página de consulta
                 page.goto("https://www.edponline.com.br/servicos/consulta-debitos", wait_until="load")
-                logging.info("  🔄  Página de consulta carregada.")
+                scraper_logger.info("  🔄  Página de consulta carregada.")
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
                 page.fill('input[name="Instalacao"]', numero)
                 btn_click = page.locator('button:has-text("Avançar")')
                 btn_click.wait_for(state="visible", timeout=20000)
                 page.click('button:has-text("Avançar")')
-                logging.info("  🔄  Página Instalação do cliente carregada.")
+                scraper_logger.info("  🔄  Página Instalação do cliente carregada.")
                 link_click = page.locator(f'a.instalacao:has-text("{numero}")')
                 link_click.wait_for(state="visible", timeout=20000)
                 link_click.click()
                 # Verifica se o erro de carregamento apareceu
                 erro_carregamento = page.locator('text="Desculpe-nos! Não foi possível carregar as suas faturas"')
                 if erro_carregamento.is_visible(timeout=3000):
-                    logging.warning("  ⚠️ Erro ao carregar faturas. Tentando novamente...")
+                    scraper_logger.warning("  ⚠️ Erro ao carregar faturas. Tentando novamente...")
                     page.go_back()
                     page.wait_for_timeout(3000)
                     continue  # Tenta novamente
@@ -279,10 +279,10 @@ def baixar_faturas_por_instalacao(instalacoes: list[str], data_inicio: str, data
                     break  # Sai do loop se carregou corretamente
 
             if not sucesso:
-                logging.error("  ❌ Falha ao carregar faturas após 3 tentativas. Pulando instalação.")
+                scraper_logger.error("  ❌ Falha ao carregar faturas após 3 tentativas. Pulando instalação.")
                 continue
             page.wait_for_timeout(3000)
-            logging.info("  🔄  Página de faturas carregada.")
+            scraper_logger.info("  🔄  Página de faturas carregada.")
             page.evaluate("window.scrollTo(0, document.body.scrollHeight)") 
             page.wait_for_timeout(500)
             # Ver mais faturas
@@ -294,15 +294,15 @@ def baixar_faturas_por_instalacao(instalacoes: list[str], data_inicio: str, data
                         ver_mais.click()
                         page.wait_for_timeout(1000)
                     else:
-                        logging.info("🔽 Nenhum botão 'Ver mais faturas' visível.")
+                        scraper_logger.info("🔽 Nenhum botão 'Ver mais faturas' visível.")
                         break
                 except Exception as e:
-                    logging.warning(f"⚠️ Erro ao clicar em 'Ver mais faturas': {e}")
+                    scraper_logger.warning(f"⚠️ Erro ao clicar em 'Ver mais faturas': {e}")
                     break
 
             cards = page.locator('div.tab-pane.active div.card.card-extrato.card-opcoes-segunda-via')
             total = cards.count()
-            logging.info(f"  Encontradas {total} faturas.")
+            scraper_logger.info(f"  Encontradas {total} faturas.")
 
             for i in range(total):
                 try:
@@ -315,10 +315,10 @@ def baixar_faturas_por_instalacao(instalacoes: list[str], data_inicio: str, data
                     ref_dt = ref_to_date(ref)
 
                     if not (min(dt_ini, dt_fim) <= ref_dt <= max(dt_ini, dt_fim)):
-                        logging.info(f"    ⏭️  Pulando fatura {ref} fora do intervalo.")
+                        scraper_logger.info(f"    ⏭️  Pulando fatura {ref} fora do intervalo.")
                         continue
 
-                    logging.info(f"    ⬇️  Baixando fatura {ref}...")
+                    scraper_logger.info(f"    ⬇️  Baixando fatura {ref}...")
                     max_retentativas = 3
                     for tentativa in range(max_retentativas):
                         try:
@@ -334,7 +334,7 @@ def baixar_faturas_por_instalacao(instalacoes: list[str], data_inicio: str, data
                                 raise Exception("Modal não carregou corretamente")
 
                         except:
-                            logging.warning(f"      ⚠️ Modal com erro, tentativa {tentativa + 1}/{max_retentativas}")
+                            scraper_logger.warning(f"      ⚠️ Modal com erro, tentativa {tentativa + 1}/{max_retentativas}")
                             try:
                                 voltar_btn = page.locator('button.btn-outline-main-2:has-text("Voltar")')
                                 voltar_btn.wait_for(state="visible", timeout=15000)
@@ -343,10 +343,10 @@ def baixar_faturas_por_instalacao(instalacoes: list[str], data_inicio: str, data
                                     page.wait_for_timeout(500)
                             except:
                                 reload_faturas(page, numero)
-                                logging.warning("      ⚠️ Botão 'Voltar' não estava disponível.")
+                                scraper_logger.warning("      ⚠️ Botão 'Voltar' não estava disponível.")
 
                     if not page.locator('a:has-text("Baixar")').is_visible():
-                        logging.error("      ❌ Falha ao abrir modal corretamente após tentativas.")
+                        scraper_logger.error("      ❌ Falha ao abrir modal corretamente após tentativas.")
                         continue  # pula para a próxima fatura
 
                     with page.expect_download() as dl:
@@ -358,30 +358,30 @@ def baixar_faturas_por_instalacao(instalacoes: list[str], data_inicio: str, data
                     caminho = os.path.join(pasta_instalacao, nome)
                     download.save_as(caminho)
                     saved_paths.append(caminho)
-                    logging.info(f"      ✔️  Salva em: {caminho}")
+                    scraper_logger.info(f"      ✔️  Salva em: {caminho}")
 
                     try:
                         fechar_modal = page.locator('i.icon-edp-circle-error.fs-1')
                         fechar_modal.wait_for(state="visible", timeout=20000)
                         fechar_modal.click()
                     except:
-                        logging.warning("      ⚠️ Não foi possível fechar o modal de fatura.")
+                        scraper_logger.warning("      ⚠️ Não foi possível fechar o modal de fatura.")
 
                 except Exception as e:
-                    logging.warning(f"      ⚠️ Erro ao baixar fatura {i+1}: {e}")
+                    scraper_logger.warning(f"      ⚠️ Erro ao baixar fatura {i+1}: {e}")
                     continue
 
             try:
                 sair = page.locator('a.edp-btn-dark:has-text("Sair da Instalação")').first
                 sair.wait_for(state="visible", timeout=10000)
                 sair.click()
-                logging.info("  🔄 Retornando para seleção de instalação...")
+                scraper_logger.info("  🔄 Retornando para seleção de instalação...")
                 for _ in range(100):
                     if "/servicos" in page.url:
                         break
                     page.wait_for_timeout(100)
             except Exception as e:
-                logging.warning(f"  ⚠️ Não foi possível clicar em 'Sair da Instalação': {e}")
+                scraper_logger.warning(f"  ⚠️ Não foi possível clicar em 'Sair da Instalação': {e}")
 
 
         ctx.close()
