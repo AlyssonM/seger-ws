@@ -12,9 +12,18 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
 from mpl_toolkits.mplot3d import Axes3D
+import logging
+import os
 from src.utils.tarifas import calcular_tarifa_verde, calcular_tarifa_azul
 
-def opt_tarifa_verde(dados, tarifas, tarifa_ere, down_bound, up_bound):
+optimization_logger = logging.getLogger("optimization")
+optimization_logger.setLevel(logging.INFO)
+handler = logging.FileHandler("src/logs/optimization.log")
+handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+optimization_logger.addHandler(handler)
+
+
+def opt_tarifa_verde(dados, tarifas, tarifa_ere, down_bound, up_bound, pis=None, cofins=None, icms=None):
     """
     Realiza a otimização de custo para a modalidade de tarifa verde.
 
@@ -38,7 +47,7 @@ def opt_tarifa_verde(dados, tarifas, tarifa_ere, down_bound, up_bound):
         - Outras métricas relevantes da otimização.
     """
     resultado = minimize_scalar(
-        lambda d: calcular_tarifa_verde(dados, tarifas, tarifa_ere, d)[0],
+        lambda d: calcular_tarifa_verde(dados, tarifas, tarifa_ere, d, pis, cofins, icms)[0],
         bounds=(30, up_bound),
         method='bounded'
     )
@@ -67,8 +76,18 @@ def opt_tarifa_verde(dados, tarifas, tarifa_ere, down_bound, up_bound):
     # custo_otimo = resultado[1]
     
     
-    demanda_range = np.linspace(down_bound, up_bound, 50)
-    custos_verde = [calcular_tarifa_verde(dados, tarifas, tarifa_ere, d)[0] for d in demanda_range]
+    # Reduz pontos de cálculo para evitar logs excessivos
+    demanda_range = np.linspace(down_bound, up_bound, 25)  # Reduzido de 50 para 25
+    
+    # Desabilita logs temporariamente durante cálculo do gráfico
+    import logging
+    app_logger_level = logging.getLogger('flask.app').level
+    logging.getLogger('flask.app').setLevel(logging.WARNING)
+    
+    custos_verde = [calcular_tarifa_verde(dados, tarifas, tarifa_ere, d, pis, cofins, icms)[0] for d in demanda_range]
+    
+    # Restaura nível de log
+    logging.getLogger('flask.app').setLevel(app_logger_level)
     plt.figure(figsize=(10, 6))
     plt.plot(demanda_range,custos_verde, label='Custo Total', color='green')
     plt.axvline(demanda_otima, color='red', linestyle='--', label=f'Demanda ótima: {demanda_otima} kW')
@@ -78,7 +97,10 @@ def opt_tarifa_verde(dados, tarifas, tarifa_ere, down_bound, up_bound):
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig("/app/src/data/plots/otimizacao_tarifa_verde1.png")
+    # Garante que o diretório de plots exista
+    plots_dir = os.path.join(os.path.dirname(__file__), '..', 'data', 'plots')
+    os.makedirs(plots_dir, exist_ok=True)
+    plt.savefig(os.path.join(plots_dir, "otimizacao_tarifa_verde1.png"))
     plt.close()
 
     result = {
@@ -88,6 +110,7 @@ def opt_tarifa_verde(dados, tarifas, tarifa_ere, down_bound, up_bound):
         "custos_verde": custos_verde
     }
     
+    optimization_logger.info(f"Otimização da tarifa verde concluída. Demanda ótima: {demanda_otima} kW, Custo ótimo: {custo_otimo}")
     return result
 
 
@@ -126,14 +149,23 @@ def opt_tarifa_azul(dados, tarifas, tarifa_ere, up_bound):
     custo_otimo = resultado.fun
 
     
-    # Geração de grade de valores
-    x = np.linspace(30, up_bound, 50)  # Demanda ponta
-    y = np.linspace(30, up_bound, 50)  # Demanda fora de ponta
+    # Geração de grade de valores (reduzida para evitar loop infinito)
+    x = np.linspace(30, up_bound, 20)  # Demanda ponta (reduzido de 50 para 20)
+    y = np.linspace(30, up_bound, 20)  # Demanda fora de ponta (reduzido de 50 para 20)
     X, Y = np.meshgrid(x, y)
+    
+    # Desabilita logs temporariamente durante cálculo da matriz
+    import logging
+    app_logger_level = logging.getLogger('flask.app').level
+    logging.getLogger('flask.app').setLevel(logging.WARNING)
+    
     Z = np.array([
         [calcular_tarifa_azul(dados, tarifas, tarifa_ere, [dp, dfp])[0] for dp in x]
         for dfp in y
     ])
+    
+    # Restaura nível de log
+    logging.getLogger('flask.app').setLevel(app_logger_level)
 
     # Gráfico 3D
     fig = plt.figure(figsize=(10, 7))
@@ -144,7 +176,9 @@ def opt_tarifa_azul(dados, tarifas, tarifa_ere, up_bound):
     ax.set_zlabel('Custo Anual (R$)')
     ax.set_title('Tarifa Azul - Custo vs Demandas')
     plt.tight_layout()
-    plt.savefig("/app/src/data/plots/otimizacao_tarifa_azul_3d.png")
+    plots_dir = os.path.join(os.path.dirname(__file__), '..', 'data', 'plots')
+    os.makedirs(plots_dir, exist_ok=True)
+    plt.savefig(os.path.join(plots_dir, "otimizacao_tarifa_azul_3d.png"))
     plt.close()
 
     # Gráfico de contorno
@@ -166,7 +200,9 @@ def opt_tarifa_azul(dados, tarifas, tarifa_ere, up_bound):
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig("/app/src/data/plots/otimizacao_tarifa_azul_contorno.png")
+    plots_dir = os.path.join(os.path.dirname(__file__), '..', 'data', 'plots')
+    os.makedirs(plots_dir, exist_ok=True)
+    plt.savefig(os.path.join(plots_dir, "otimizacao_tarifa_azul_contorno.png"))
     plt.close()
 
     result = {
@@ -178,4 +214,5 @@ def opt_tarifa_azul(dados, tarifas, tarifa_ere, up_bound):
         "z": Z.tolist()   # matriz de custos
     }
 
+    optimization_logger.info(f"Otimização da tarifa azul concluída. Demanda ótima de ponta: {demanda_p_otima} kW, Demanda ótima fora de ponta: {demanda_fp_otima} kW, Custo ótimo: {custo_otimo}")
     return result
