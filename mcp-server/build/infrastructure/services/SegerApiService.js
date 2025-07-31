@@ -2,7 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 export class SegerApiService {
     constructor() { }
-    API_BASE = "http://localhost:5000/api/seger";
+    API_BASE = "https://5001-idx-pylatex-seger-1742562415094.cluster-kc2r6y3mtba5mswcmol45orivs.cloudworkstations.dev/api/seger";
     USER_AGENT = "seger-app/1.0";
     DEFAULT_HEADERS = {
         "Content-Type": "application/json",
@@ -47,6 +47,17 @@ export class SegerApiService {
         const result = await this.makeRequest("/dados-fatura", "POST", { pdf_path: pdfPath });
         if (!result) {
             throw new Error(`Não foi possível obter dados da fatura em ${pdfPath}`);
+        }
+        return result;
+    }
+    /**
+     * POST /analisar-fatura
+     * Realiza análise completa de faturas energéticas
+     */
+    async analisarFaturas(request) {
+        const result = await this.makeRequest("/analisar-fatura", "POST", request);
+        if (!result) {
+            throw new Error(`Não foi possível realizar análise para instalação ${request.codInstalacao}`);
         }
         return result;
     }

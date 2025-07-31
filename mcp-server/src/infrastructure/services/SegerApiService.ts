@@ -30,11 +30,27 @@ export interface DadosFatura {
   // … adicione aqui todos os campos retornados pelo Flask
 }
 
+export interface AnalisarFaturaRequest {
+  codInstalacao: string;
+  data_inicio: string;
+  data_fim: string;
+  periodo: string;
+  distribuidora: string;
+  username: string;
+  password: string;
+}
+
+export interface AnalisarFaturaResponse {
+  message: string;
+  analise?: any;
+  // Adicionar outros campos conforme necessário
+}
+
 export class SegerApiService{
 
      constructor() {}
 
-    private readonly API_BASE="http://localhost:5000/api/seger";
+    private readonly API_BASE="https://5001-idx-pylatex-seger-1742562415094.cluster-kc2r6y3mtba5mswcmol45orivs.cloudworkstations.dev/api/seger";
     private readonly USER_AGENT = "seger-app/1.0";
     protected readonly DEFAULT_HEADERS = {
         "Content-Type": "application/json",
@@ -102,6 +118,22 @@ export class SegerApiService{
         );
         if (!result) {
             throw new Error(`Não foi possível obter dados da fatura em ${pdfPath}`);
+        }
+        return result;
+    }
+
+    /**
+     * POST /analisar-fatura
+     * Realiza análise completa de faturas energéticas
+     */
+    async analisarFaturas(request: AnalisarFaturaRequest): Promise<AnalisarFaturaResponse> {
+        const result = await this.makeRequest<AnalisarFaturaResponse>(
+            "/analisar-fatura",
+            "POST",
+            request
+        );
+        if (!result) {
+            throw new Error(`Não foi possível realizar análise para instalação ${request.codInstalacao}`);
         }
         return result;
     }

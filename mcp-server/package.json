@@ -5,7 +5,10 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc",
-    "start": "node build/main.js"
+    "start": "node build/main.js",
+    "start:ws": "node build/main.js websocket",
+    "start:ws:8080": "node build/main.js websocket 8080",
+    "dev": "tsc && npm run start:ws"
   },
   "keywords": [],
   "author": "",
@@ -13,6 +16,8 @@
   "description": "",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.9.0",
+    "@types/ws": "^8.18.1",
+    "ws": "^8.18.3",
     "zod": "^3.24.2"
   },
   "devDependencies": {
