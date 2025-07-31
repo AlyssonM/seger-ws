@@ -2,7 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 export class SegerApiService {
     constructor() { }
-    API_BASE = "https://5001-firebase-studio-1749560787008.cluster-vpxjqdstfzgs6qeiaf7rdlsqrc.cloudworkstations.dev/api/seger";
+    API_BASE = "http://localhost:5001/api/seger";
     USER_AGENT = "seger-app/1.0";
     DEFAULT_HEADERS = {
         "Content-Type": "application/json",
@@ -58,6 +58,17 @@ export class SegerApiService {
         const result = await this.makeRequest("/analisar-fatura", "POST", request);
         if (!result) {
             throw new Error(`Não foi possível realizar análise para instalação ${request.codInstalacao}`);
+        }
+        return result;
+    }
+    /**
+     * POST /faturas-json
+     * Obtém dados consolidados de faturas em formato JSON
+     */
+    async getFaturasJson(request) {
+        const result = await this.makeRequest("/faturas-json", "POST", request);
+        if (!result) {
+            throw new Error(`Não foi possível obter dados consolidados para instalação ${request.codInstalacao}`);
         }
         return result;
     }

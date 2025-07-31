@@ -14,6 +14,7 @@ export class SegerToolsController {
   private registerTools(): void {
     this.registerBaixarFaturasTool();
     this.registerDadosFaturaTool();
+    this.registerDadosConsolidadosTool();
     this.registerStartAnalysisTool();
   }
 
@@ -63,6 +64,68 @@ export class SegerToolsController {
             },
           ],
         };
+      }
+    );
+  }
+
+  private registerDadosConsolidadosTool(): void {
+    this.server.tool(
+      "dados-consolidados",
+      "Obtém dados consolidados de faturas de uma instalação para um período específico",
+      {
+        codInstalacao: z.string()
+          .describe("Código da instalação (ex: '0000144112')"),
+        data_inicio: z.string()
+          .describe("Data início no formato MES-ANO (ex: 'JAN-2025')"),
+        data_fim: z.string()
+          .describe("Data fim no formato MES-ANO (ex: 'ABR-2025')"),
+        distribuidora: z.string().optional()
+          .describe("Distribuidora (padrão: 'EDP ES')"),
+      },
+      async ({ codInstalacao, data_inicio, data_fim, distribuidora = "EDP ES" }) => {
+        try {
+          console.error(`[MCP] Obtendo dados consolidados para instalação: ${codInstalacao}`);
+          console.error(`[MCP] Período: ${data_inicio} até ${data_fim}`);
+          console.error(`[MCP] Distribuidora: ${distribuidora}`);
+
+          const dados = await this.segerService.getFaturasJson({
+            codInstalacao,
+            data_inicio,
+            data_fim,
+            distribuidora,
+            via_regex: true
+          });
+
+          console.error(`[MCP] Dados consolidados obtidos com sucesso - ${dados.total_faturas} faturas`);
+
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Dados consolidados da instalação ${codInstalacao} (${data_inicio} a ${data_fim}):\n\n` +
+                      `Total de faturas: ${dados.total_faturas}\n` +
+                      `Distribuidora: ${distribuidora}\n\n` +
+                      `Dados detalhados:\n${JSON.stringify(dados, null, 2)}`
+              }
+            ]
+          };
+        } catch (error) {
+          console.error(`[MCP] Erro ao obter dados consolidados:`, error);
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Erro ao obter dados consolidados da instalação ${codInstalacao}:\n` +
+                      `${error instanceof Error ? error.message : 'Erro desconhecido'}\n\n` +
+                      `Verifique se:\n` +
+                      `- A instalação existe: ${codInstalacao}\n` +
+                      `- O período é válido: ${data_inicio} a ${data_fim}\n` +
+                      `- Existem faturas para o período solicitado\n` +
+                      `- O backend está respondendo corretamente`
+              }
+            ]
+          };
+        }
       }
     );
   }
