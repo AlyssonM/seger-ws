@@ -2,7 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 export class SegerApiService {
     constructor() { }
-    API_BASE = "https://5001-idx-pylatex-seger-1742562415094.cluster-kc2r6y3mtba5mswcmol45orivs.cloudworkstations.dev/api/seger";
+    API_BASE = "https://5001-firebase-studio-1749560787008.cluster-vpxjqdstfzgs6qeiaf7rdlsqrc.cloudworkstations.dev/api/seger";
     USER_AGENT = "seger-app/1.0";
     DEFAULT_HEADERS = {
         "Content-Type": "application/json",

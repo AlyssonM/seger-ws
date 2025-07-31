@@ -50,7 +50,7 @@ export class SegerApiService{
 
      constructor() {}
 
-    private readonly API_BASE="https://5001-idx-pylatex-seger-1742562415094.cluster-kc2r6y3mtba5mswcmol45orivs.cloudworkstations.dev/api/seger";
+    private readonly API_BASE="https://5001-firebase-studio-1749560787008.cluster-vpxjqdstfzgs6qeiaf7rdlsqrc.cloudworkstations.dev/api/seger";
     private readonly USER_AGENT = "seger-app/1.0";
     protected readonly DEFAULT_HEADERS = {
         "Content-Type": "application/json",

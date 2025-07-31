@@ -1,10 +1,17 @@
 # ⚡ Seger-WS: Sistema de Gestão de Eficiência Energética
 
-Plataforma completa para automação de análise tarifária e gestão energética, com web scraper para faturas EDP, análise inteligente de modalidades tarifárias e API REST com documentação Swagger. Inclui servidor MCP (Model Context Protocol) para extensibilidade e integração com sistemas externos.
+Plataforma completa para automação de análise tarifária e gestão energética com **interface de chat interativo com IA**. Inclui web scraper para faturas EDP, análise inteligente de modalidades tarifárias, API REST com documentação Swagger e servidor MCP (Model Context Protocol) com suporte WebSocket para integração em tempo real.
 
 ---
 
 ## 🎯 Funcionalidades Principais
+
+### 🤖 **Interface de Chat Interativo com IA**
+- **Chat inteligente** com Google Gemini para análises conversacionais
+- **Integração MCP** para acesso a ferramentas especializadas em tempo real
+- **Análise sob demanda** via comandos naturais em português
+- **Contexto persistente** durante toda a sessão de análise
+- **Resultados visuais** com gráficos e tabelas interativas
 
 ### 📊 **Análise Tarifária Inteligente**
 - **Detecção automática** de modalidade tarifária atual (Verde/Azul/Convencional)
@@ -39,12 +46,15 @@ Plataforma completa para automação de análise tarifária e gestão energétic
 ## 🛠 Tecnologias
 
 - **Backend**: Flask-RESTX + Python 3.9+
+- **Frontend**: Next.js 15 + React 19 + TypeScript
+- **Chat IA**: Google Gemini + Interface conversacional
 - **Web Scraping**: Playwright (Chromium)
 - **IA/LLM**: Google Gemini para extração complexa
 - **Documentação**: Swagger/OpenAPI 3.0
 - **Análise**: Scipy para otimização matemática
 - **Dados**: Pandas + NumPy para processamento
-- **MCP Server**: Node.js + TypeScript
+- **MCP Server**: Node.js + TypeScript + WebSocket
+- **UI Components**: shadcn/ui + TailwindCSS
 
 ---
 
@@ -67,7 +77,13 @@ pip install -r requirements.txt
 playwright install  # Instala navegadores Chromium
 ```
 
-### 3. **MCP Server (Opcional)**
+### 3. **Frontend React (Recomendado)**
+```bash
+# Instalar dependências do frontend
+npm install
+```
+
+### 4. **MCP Server (Para Chat IA)**
 ```bash
 cd mcp-server
 npm install
@@ -75,8 +91,15 @@ npm run build
 cd ..
 ```
 
-### 4. **Configuração**
-Crie arquivo `.env` com credenciais EDP:
+### 5. **Configuração**
+Crie arquivo `.env.local` para o frontend:
+```env
+GEMINI_API_KEY=sua_chave_gemini_aqui
+MCP_SERVER_URL=ws://localhost:8080
+NEXT_PUBLIC_API_URL=http://localhost:5001
+```
+
+E arquivo `.env` para credenciais EDP:
 ```env
 EDP_LOGIN_EMAIL=seu-email@edp.com
 EDP_LOGIN_SENHA=sua_senha_segura
@@ -84,21 +107,61 @@ EDP_LOGIN_SENHA=sua_senha_segura
 
 ## 🚀 Inicialização
 
-### **API Principal**
+### **Frontend React (Interface Principal)**
+```bash
+# Inicia interface web com chat IA
+npm run dev
+
+# Interface disponível em http://localhost:3000
+# - Dashboard com análises visuais
+# - Chat interativo com IA
+# - Visualização de dados em tempo real
+```
+
+### **API Backend**
 ```bash
 # Ativa ambiente e inicia servidor Flask
 source .seger/bin/activate
 python app.py
 
-# Servidor rodando em http://localhost:5001
+# API rodando em http://localhost:5001
 # Swagger UI: http://localhost:5001/swagger/
 ```
 
-### **MCP Server (Opcional)**
+### **MCP Server (Para Chat IA)**
 ```bash
 cd mcp-server
-npm run start  # Porta 3000
+./start-server.sh websocket  # Porta 8080 (WebSocket)
+# ou
+./start-server.sh            # Modo stdio (Claude Desktop)
 ```
+
+---
+
+## 🤖 Chat Interativo com IA
+
+### **Interface Conversacional**
+O sistema agora inclui uma interface de chat inteligente que permite:
+
+- **Análises em linguagem natural**: "Analise a instalação 0000144112 de maio a dezembro de 2024"
+- **Perguntas complexas**: "Qual seria a economia se migrássemos para tarifa azul?"
+- **Contextualização automática**: O chat mantém o contexto da conversa
+- **Resultados visuais**: Gráficos e tabelas gerados automaticamente
+
+### **Exemplos de Comandos**
+```
+💬 "Faça uma análise completa da instalação 144112 de janeiro a junho de 2024"
+💬 "Compare as modalidades tarifárias para o período analisado"
+💬 "Quais são as recomendações de economia?"
+💬 "Gere um relatório executivo com os resultados"
+```
+
+### **Integração MCP**
+O chat utiliza o protocolo MCP para:
+- **Acesso direto às ferramentas** de análise em tempo real
+- **Comunicação WebSocket** para respostas instantâneas
+- **Processamento inteligente** com Google Gemini
+- **Persistência de sessão** durante a análise
 
 ---
 
@@ -172,7 +235,14 @@ curl -X POST http://localhost:5001/api/seger/faturas \
 ```
 seger-ws/
 ├── app.py                 # 🚀 Servidor Flask principal (porta 5001)
-├── src/
+├── src/                   # 🐍 Backend Python
+│   ├── app/              # ⚙️ Frontend Next.js
+│   │   ├── dashboard/    # 📊 Páginas de análise
+│   │   ├── actions.ts    # 🔄 Server Actions
+│   │   └── gemini-actions.ts # 🤖 Integração Gemini
+│   ├── components/       # 🧩 Componentes React
+│   │   └── ui/Chat.tsx   # 💬 Interface de chat
+│   ├── contexts/         # 🔄 Context providers
 │   ├── routes.py         # 📡 Endpoints da API REST
 │   ├── scraper.py        # 🕸️ Web scraping EDP (Playwright)
 │   ├── parser.py         # 🧠 Extração LLM (Gemini)
@@ -181,16 +251,25 @@ seger-ws/
 │       ├── analise.py    # 🎯 Nova análise tarifária
 │       ├── tarifas.py    # 💰 Cálculos tarifários
 │       └── optmization.py # 📊 Algoritmos de otimização
-├── mcp-server/           # 🔧 Servidor MCP (Node.js)
+├── mcp-server/           # 🔧 Servidor MCP (Node.js + WebSocket)
+│   ├── src/
+│   │   ├── infrastructure/
+│   │   │   └── services/ # 🌐 Serviços API
+│   │   └── interface/
+│   │       └── controllers/ # 🔧 Controladores MCP
+│   └── start-server.sh   # 🚀 Script de inicialização
 └── faturas_edp/          # 📁 PDFs organizados por instalação
 ```
 
-### **Fluxo de Análise**
-1. **Download** → Web scraping das faturas PDF
-2. **Extração** → Parsing via regex ou LLM
-3. **Análise** → Detecção automática de modalidade
-4. **Otimização** → Cálculo de economia potencial
-5. **Relatório** → Recomendações estruturadas
+### **Fluxo de Análise Moderna**
+1. **Interface** → Chat interativo ou dashboard web
+2. **Comunicação** → WebSocket/MCP para tempo real
+3. **Download** → Web scraping das faturas PDF
+4. **Extração** → Parsing via regex ou LLM
+5. **Análise** → Detecção automática de modalidade
+6. **Otimização** → Cálculo de economia potencial
+7. **Visualização** → Gráficos e tabelas interativas
+8. **Chat IA** → Respostas e recomendações conversacionais
 
 ---
 
@@ -217,13 +296,29 @@ seger-ws/
 
 ## 🔧 MCP Server Integration
 
-O servidor MCP (Model Context Protocol) estende as funcionalidades:
+O servidor MCP (Model Context Protocol) fornece integração avançada com suporte **WebSocket** e **stdio**:
 
-### **Inicialização**
+### **Ferramentas Disponíveis**
+- `seger-tools/start_analysis`: Análise energética completa automatizada
+- `baixar-faturas`: Download de faturas por instalação e período
+- `dados-fatura`: Extração de dados consolidados de faturas
+
+### **Modos de Operação**
+
+#### **WebSocket Mode (Frontend React)**
 ```bash
 cd mcp-server
-npm run build && npm run start
+./start-server.sh websocket     # Porta 8080 (padrão)
+./start-server.sh websocket 9090 # Porta customizada
 ```
+**Uso**: Integração com chat do frontend React
+
+#### **Stdio Mode (Claude Desktop)**
+```bash
+cd mcp-server
+./start-server.sh  # ou npm start
+```
+**Uso**: Integração direta com Claude Desktop
 
 ### **Configuração Claude Desktop**
 Adicione ao `settings.json`:
@@ -231,12 +326,31 @@ Adicione ao `settings.json`:
 {
   "mcpServers": {
     "seger-ws-mcp-server": {
-      "command": "npm",
-      "args": ["run", "start"],
-      "cwd": "/home/user/pylatex-seger/seger-ws/mcp-server"
+      "command": "node",
+      "args": ["build/main.js"],
+      "cwd": "/caminho/para/seger-ws/mcp-server"
     }
   }
 }
+```
+
+### **Exemplo de Uso via MCP**
+```bash
+# Análise automática com credenciais padrão
+curl -X POST ws://localhost:8080 \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {
+      "name": "seger-tools/start_analysis",
+      "arguments": {
+        "installations": ["0000144112"],
+        "start_date": "05/2024",
+        "end_date": "04/2025"
+      }
+    }
+  }'
 ```
 
 ---
@@ -279,6 +393,21 @@ cat .env
 # Teste manual no navegador
 ```
 
+#### 🤖 **Chat não Responde**
+```bash
+# Verifique MCP server
+cd mcp-server && ./start-server.sh websocket
+
+# Verifique variáveis de ambiente
+cat .env.local | grep GEMINI_API_KEY
+cat .env.local | grep MCP_SERVER_URL
+```
+
+#### 🔌 **"Connection refused" no Frontend**
+- Verifique se o MCP server está rodando: `./start-server.sh websocket`
+- Confirme a porta no `.env.local`: `MCP_SERVER_URL=ws://localhost:8080`
+- Teste a conexão: `wscat -c ws://localhost:8080`
+
 #### 📊 **Valores Zerados na Análise**
 - ✅ **Solucionado**: Valores mensais agora calculados via funções tarifárias
 - ✅ **Ordenação**: Dados cronológicos em todos os endpoints
@@ -292,35 +421,53 @@ playwright install chromium
 #### 🧠 **Erro de Parsing LLM**
 - Verifique conexão com Google Gemini
 - Fallback automático para regex ativo
+- Teste a chave API: `curl -H "Authorization: Bearer $GEMINI_API_KEY" ...`
+
+#### 🔧 **"Tool not found" no MCP**
+- Verifique os logs do MCP server: `./start-server.sh websocket`
+- Confirme que as ferramentas foram registradas: `tools/list`
+- Recompile o servidor: `npm run build`
 
 ---
 
 ## 🎯 Casos de Uso
 
 ### **💼 Consultores Energéticos**
-- Análise automatizada de múltiplas instalações
-- Relatórios executivos para clientes
-- Comparação de modalidades tarifárias
+- **Chat inteligente** para análises rápidas com clientes
+- **Dashboard visual** com gráficos e métricas
+- **Relatórios automatizados** via conversação natural
+- **Comparações interativas** entre modalidades
 
 ### **🏢 Facilities Management**
-- Monitoramento contínuo de eficiência
-- Identificação de oportunidades de economia
-- Integração com sistemas ERP/SCADA
+- **Interface web moderna** para equipes técnicas
+- **Análises sob demanda** via comandos naturais
+- **Monitoramento visual** em tempo real
+- **Integração API** com sistemas ERP/SCADA
 
 ### **🔬 Pesquisa Acadêmica**
-- Base de dados de consumo energético
-- Algoritmos de otimização tarifária
-- Análise de padrões de consumo
+- **Exploração interativa** de dados energéticos
+- **Visualizações personalizadas** via chat
+- **Export de dados** para ferramentas acadêmicas
+- **API REST** para integração com pipelines de pesquisa
 
 ---
 
 ## 🚀 Roadmap
 
-- [ ] **Dashboard Web**: Interface visual para análises
+### **✅ Implementado Recentemente**
+- [x] **Interface Web**: Dashboard React com Next.js 15
+- [x] **Chat Interativo**: IA conversacional com Gemini
+- [x] **MCP WebSocket**: Integração em tempo real
+- [x] **Visualizações**: Gráficos e tabelas interativas
+- [x] **Context Management**: Persistência de sessão
+
+### **🕰️ Próximas Features**
 - [ ] **API v2**: GraphQL para consultas flexíveis  
 - [ ] **ML Predictions**: Previsão de consumo futuro
 - [ ] **Multi-distribuidora**: Suporte além da EDP
 - [ ] **Export formats**: Excel, PDF, Power BI
+- [ ] **Mobile App**: Aplicação React Native
+- [ ] **Real-time Alerts**: Notificações de anomalias
 
 ---
 
