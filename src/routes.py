@@ -16,6 +16,7 @@ from src.utils.dict_diff import dict_diff, has_diff
 from src.utils.tarifas import get_tarifas_filtradas
 from src.utils.tarifas import calcular_tarifa_verde, calcular_tarifa_azul
 from src.utils.tarifas import extrair_tarifa_compacta_por_modalidade
+from src.utils.invoice_locator import get_invoice_locator
 
 def ordenar_faturas_mensais_cronologicamente(faturas_mensais):
     """Ordena faturas mensais cronologicamente por mês/ano"""
@@ -168,6 +169,139 @@ def converter_tarifas_para_kwh(tarifas_compactadas):
                 )
     return tarifas_compactadas
 
+
+def buscar_arquivos_fatura_com_fallback(codinstalacao: str, data_inicio: str = None, data_fim: str = None):
+    """
+    Busca arquivos de faturas usando sistema de fallback (local + Google Drive)
+    
+    Returns:
+        Lista de dicionários com informações dos arquivos e suas fontes
+    """
+    try:
+        locator = get_invoice_locator()
+        arquivos_info = locator.find_invoice_files(codinstalacao, data_inicio, data_fim)
+        
+        # Log da fonte dos arquivos para debug
+        fontes = {}
+        for arquivo in arquivos_info:
+            fonte = arquivo['fonte']
+            fontes[fonte] = fontes.get(fonte, 0) + 1
+        
+        current_app.logger.info(f"Arquivos encontrados por fonte: {fontes}")
+        
+        return arquivos_info
+    except Exception as e:
+        current_app.logger.error(f"Erro na busca com fallback: {str(e)}")
+        # Fallback para busca local tradicional
+        import glob
+        pasta_instalacao = os.path.join("faturas_edp", codinstalacao)
+        padrao_arquivos = os.path.join(pasta_instalacao, "*.pdf")
+        arquivos_pdf = glob.glob(padrao_arquivos)
+        
+        dt_ini, dt_fim = None, None
+        if data_inicio and data_fim:
+            dt_ini = ref_to_date(data_inicio)
+            dt_fim = ref_to_date(data_fim)
+            if dt_ini > dt_fim:
+                dt_ini, dt_fim = dt_fim, dt_ini
+        
+        arquivos_info = []
+        for arquivo in arquivos_pdf:
+            nome_arquivo = os.path.basename(arquivo)
+            ref = None
+            if "_" in nome_arquivo:
+                ref = nome_arquivo.split("_")[-1].replace(".pdf", "")
+                if dt_ini and dt_fim:
+                    ref_dt = ref_to_date(ref)
+                    if not (dt_ini <= ref_dt <= dt_fim):
+                        continue
+            
+            arquivos_info.append({
+                'arquivo': nome_arquivo,
+                'caminho_completo': arquivo,
+                'referencia': ref,
+                'fonte': 'local',
+                'drive_file_id': None
+            })
+        
+        return arquivos_info
+
+
+def obter_caminho_arquivo_fatura(arquivo_info):
+    """
+    Obtém caminho do arquivo de fatura, baixando do Google Drive se necessário
+    
+    Returns:
+        Caminho do arquivo local ou None se erro
+    """
+    try:
+        if arquivo_info['fonte'] == 'local':
+            return arquivo_info['caminho_completo']
+        
+        # Arquivo do Google Drive - precisa baixar
+        locator = get_invoice_locator()
+        return locator.get_file_path(arquivo_info)
+        
+    except Exception as e:
+        current_app.logger.error(f"Erro ao obter caminho do arquivo: {str(e)}")
+        return None
+
+
+def processar_faturas_com_fallback(codinstalacao: str, data_inicio: str, data_fim: str, via_regex: bool = True):
+    """
+    Função auxiliar para processar faturas usando fallback, retornando dados extraídos
+    
+    Returns:
+        tuple: (dados_faturas, info_processamento)
+    """
+    arquivos_info = buscar_arquivos_fatura_com_fallback(codinstalacao, data_inicio, data_fim)
+    
+    if not arquivos_info:
+        return [], {"error": f"Nenhuma fatura encontrada para instalação {codinstalacao}"}
+    
+    dados_faturas = []
+    arquivos_processados = 0
+    arquivos_com_erro = 0
+    fontes_utilizadas = {}
+    
+    for arquivo_info in arquivos_info:
+        nome_arquivo = arquivo_info['arquivo']
+        fonte = arquivo_info['fonte']
+        
+        # Obtém caminho do arquivo
+        caminho_arquivo = obter_caminho_arquivo_fatura(arquivo_info)
+        
+        if not caminho_arquivo:
+            current_app.logger.warning(f"Não foi possível obter arquivo {nome_arquivo} da fonte {fonte}")
+            arquivos_com_erro += 1
+            continue
+        
+        # Extrai dados da fatura
+        try:
+            dados_fatura = extrair_dados_completos_da_fatura(caminho_arquivo, via_regex)
+            if "error" not in dados_fatura:
+                dados_faturas.append(dados_fatura)
+                arquivos_processados += 1
+                fontes_utilizadas[fonte] = fontes_utilizadas.get(fonte, 0) + 1
+            else:
+                current_app.logger.warning(f"Erro ao extrair dados de {nome_arquivo}: {dados_fatura.get('error', 'Erro desconhecido')}")
+                arquivos_com_erro += 1
+        except Exception as e:
+            current_app.logger.error(f"Erro ao processar arquivo {nome_arquivo}: {str(e)}")
+            arquivos_com_erro += 1
+    
+    info_processamento = {
+        "total_arquivos_encontrados": len(arquivos_info),
+        "arquivos_processados": arquivos_processados,
+        "arquivos_com_erro": arquivos_com_erro,
+        "fontes_utilizadas": fontes_utilizadas
+    }
+    
+    if not dados_faturas:
+        info_processamento["error"] = "Nenhuma fatura válida encontrada no período"
+    
+    return dados_faturas, info_processamento
+
 @bp.route("/faturas")
 class Faturas(Resource):
     @bp.expect(faturas_input)
@@ -259,34 +393,56 @@ class FaturasJson(Resource):
         dt_ini, dt_fim = min(dt1, dt2), max(dt1, dt2)
 
         try:
-            import glob
-            import os
+            # Busca arquivos usando sistema de fallback (local + Google Drive)
+            arquivos_info = buscar_arquivos_fatura_com_fallback(codinstalacao, data_inicio, data_fim)
             
-            # Busca arquivos PDF na pasta da instalação
-            pasta_instalacao = os.path.join("faturas_edp", codinstalacao)
-            padrao_arquivos = os.path.join(pasta_instalacao, "*.pdf")
-            arquivos_pdf = glob.glob(padrao_arquivos)
-            
-            if not arquivos_pdf:
+            if not arquivos_info:
                 return {"error": f"Nenhuma fatura encontrada para instalação {codinstalacao}"}, 404
             
-            # Filtra arquivos por período
+            # Processa arquivos encontrados
             dados_consolidados = []
-            for arquivo in arquivos_pdf:
-                nome_arquivo = os.path.basename(arquivo)
-                # Extrai referência do nome do arquivo (formato: fatura_REF.pdf)
-                if "_" in nome_arquivo:
-                    ref = nome_arquivo.split("_")[-1].replace(".pdf", "")
-                    ref_dt = ref_to_date(ref)
-                    if dt_ini <= ref_dt <= dt_fim:
-                        # Extrai dados da fatura
-                        dados_fatura = extrair_dados_completos_da_fatura(arquivo, via_regex)
-                        if "error" not in dados_fatura:
-                            dados_consolidados.append({
-                                "arquivo": nome_arquivo,
-                                "referencia": ref,
-                                "dados": dados_fatura
-                            })
+            arquivos_processados = 0
+            arquivos_com_erro = 0
+            
+            for arquivo_info in arquivos_info:
+                nome_arquivo = arquivo_info['arquivo']
+                referencia = arquivo_info['referencia']
+                fonte = arquivo_info['fonte']
+                
+                # Obtém caminho do arquivo (baixa do Drive se necessário)
+                caminho_arquivo = obter_caminho_arquivo_fatura(arquivo_info)
+                
+                if not caminho_arquivo:
+                    current_app.logger.warning(f"Não foi possível obter arquivo {nome_arquivo} da fonte {fonte}")
+                    arquivos_com_erro += 1
+                    continue
+                
+                # Extrai dados da fatura
+                try:
+                    dados_fatura = extrair_dados_completos_da_fatura(caminho_arquivo, via_regex)
+                    if "error" not in dados_fatura:
+                        dados_consolidados.append({
+                            "arquivo": nome_arquivo,
+                            "referencia": referencia,
+                            "dados": dados_fatura,
+                            "fonte": fonte  # Inclui informação da fonte
+                        })
+                        arquivos_processados += 1
+                    else:
+                        current_app.logger.warning(f"Erro ao extrair dados de {nome_arquivo}: {dados_fatura.get('error', 'Erro desconhecido')}")
+                        arquivos_com_erro += 1
+                except Exception as e:
+                    current_app.logger.error(f"Erro ao processar arquivo {nome_arquivo}: {str(e)}")
+                    arquivos_com_erro += 1
+            
+            # Log de resultados
+            current_app.logger.info(f"Processamento concluído: {arquivos_processados} sucessos, {arquivos_com_erro} erros")
+            
+            # Conta fontes dos arquivos processados
+            fontes_utilizadas = {}
+            for item in dados_consolidados:
+                fonte = item.get('fonte', 'unknown')
+                fontes_utilizadas[fonte] = fontes_utilizadas.get(fonte, 0) + 1
             
             return {
                 "message": "Dados consolidados extraídos com sucesso",
@@ -297,6 +453,9 @@ class FaturasJson(Resource):
                     "via_regex": via_regex
                 },
                 "total_faturas": len(dados_consolidados),
+                "arquivos_processados": arquivos_processados,
+                "arquivos_com_erro": arquivos_com_erro,
+                "fontes_utilizadas": fontes_utilizadas,
                 "dados": dados_consolidados
             }
             
@@ -595,34 +754,13 @@ class AnalisarFatura(Resource):
             return {"error": "Parâmetros obrigatórios: data_inicio, data_fim, codInstalacao, periodo, distribuidora"}, 400
             
         try:
-            # Busca dados das faturas
-            import glob
-            import os
+            # Usa sistema de fallback para buscar faturas
+            dados_faturas, info_processamento = processar_faturas_com_fallback(
+                codinstalacao, data_inicio, data_fim, via_regex
+            )
             
-            pasta_instalacao = os.path.join("faturas_edp", codinstalacao)
-            padrao_arquivos = os.path.join(pasta_instalacao, "*.pdf")
-            arquivos_pdf = glob.glob(padrao_arquivos)
-            
-            if not arquivos_pdf:
-                return {"error": f"Nenhuma fatura encontrada para instalação {codinstalacao}"}, 404
-            
-            dt_ini = ref_to_date(data_inicio)
-            dt_fim = ref_to_date(data_fim)
-            
-            # Extrai dados das faturas no período
-            dados_faturas = []
-            for arquivo in arquivos_pdf:
-                nome_arquivo = os.path.basename(arquivo)
-                if "_" in nome_arquivo:
-                    ref = nome_arquivo.split("_")[-1].replace(".pdf", "")
-                    ref_dt = ref_to_date(ref)
-                    if dt_ini <= ref_dt <= dt_fim:
-                        dados_fatura = extrair_dados_completos_da_fatura(arquivo, via_regex)
-                        if "error" not in dados_fatura:
-                            dados_faturas.append(dados_fatura)
-            
-            if not dados_faturas:
-                return {"error": "Nenhuma fatura válida encontrada no período"}, 404
+            if "error" in info_processamento:
+                return {"error": info_processamento["error"]}, 404
             
             # Busca tarifas para análise
             tarifas_raw = get_tarifas_filtradas(mes_ano=periodo, distribuidora=distribuidora, detalhe="Não se Aplica")
@@ -662,6 +800,7 @@ class AnalisarFatura(Resource):
                     "tarifa_ere": tarifa_ere
                 },
                 "faturas_analisadas": len(dados_faturas),
+                "info_processamento": info_processamento,
                 "analise": resultado_analise
             }
             
