@@ -53,3 +53,7 @@ ehthumbs.db
 # Claude & Gemini .md
 CLAUDE.md
 GEMINI.md
+
+# Google drive credentials
+credentials.json
+token.json
