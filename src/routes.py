@@ -1000,9 +1000,9 @@ class CalcAzul(Resource):
 # ENDPOINTS DE GERENCIAMENTO DE CACHE
 # =============================================================================
 
-@api.route('/cache/status/<string:codinstalacao>')
+@bp.route('/cache/status/<string:codinstalacao>')
 class CacheStatus(Resource):
-    @api.doc('cache_status')
+    @bp.doc('cache_status')
     def get(self, codinstalacao):
         """Retorna status do cache para uma instalação específica"""
         try:
@@ -1027,9 +1027,9 @@ class CacheStatus(Resource):
             return {"error": f"Erro ao obter status do cache: {str(e)}"}, 500
 
 
-@api.route('/cache/stats')
+@bp.route('/cache/stats')
 class CacheStats(Resource):
-    @api.doc('cache_stats')
+    @bp.doc('cache_stats')
     def get(self):
         """Retorna estatísticas globais do cache"""
         try:
@@ -1039,9 +1039,9 @@ class CacheStats(Resource):
             return {"error": f"Erro ao obter estatísticas do cache: {str(e)}"}, 500
 
 
-@api.route('/cache/<string:codinstalacao>')
+@bp.route('/cache/<string:codinstalacao>')
 class CacheClear(Resource):
-    @api.doc('cache_clear_installation')
+    @bp.doc('cache_clear_installation')
     def delete(self, codinstalacao):
         """Remove todo o cache de uma instalação específica"""
         try:
@@ -1060,9 +1060,9 @@ class CacheClear(Resource):
             return {"error": f"Erro ao remover cache: {str(e)}"}, 500
 
 
-@api.route('/cache/<string:codinstalacao>/<string:periodo>')
+@bp.route('/cache/<string:codinstalacao>/<string:periodo>')
 class CacheClearPeriod(Resource):
-    @api.doc('cache_clear_period')
+    @bp.doc('cache_clear_period')
     def delete(self, codinstalacao, periodo):
         """Remove cache de um período específico (formato: YYYY-MM)"""
         try:
@@ -1082,9 +1082,9 @@ class CacheClearPeriod(Resource):
             return {"error": f"Erro ao remover cache do período: {str(e)}"}, 500
 
 
-@api.route('/cache')
+@bp.route('/cache')
 class CacheClearAll(Resource):
-    @api.doc('cache_clear_all')
+    @bp.doc('cache_clear_all')
     def delete(self):
         """Remove todo o cache do sistema"""
         try:
