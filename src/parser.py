@@ -49,7 +49,9 @@ def _extrair_texto_pdf(pdf_path: str) -> str:
 
 def extrair_dados_completos_da_fatura(
     pdf_path: str, 
-    via_regex: bool = True
+    via_regex: bool = True,
+    codinstalacao: str = None,
+    use_cache: bool = True
 ) -> Dict[str, Any]:
     """
         Extrai dados completos de uma fatura em formato PDF.
@@ -62,6 +64,8 @@ def extrair_dados_completos_da_fatura(
             pdf_path: O caminho para o arquivo PDF da fatura.
             via_regex: Booleano indicando se a extração deve usar expressões
                     regulares (regex). O valor padrão é True.
+            codinstalacao: Código da instalação para cache (opcional).
+            use_cache: Se deve usar sistema de cache. O valor padrão é True.
 
         Returns:
             Um dicionário contendo os dados extraídos da fatura. A estrutura
@@ -73,12 +77,42 @@ def extrair_dados_completos_da_fatura(
             ValueError: Se o conteúdo do PDF não puder ser processado como fatura.
             # Adicione outras exceções relevantes aqui.
     """
+    from datetime import datetime
+    
+    # Tenta carregar do cache primeiro
+    if use_cache and codinstalacao:
+        try:
+            from src.utils.fatura_cache import get_cache_instance
+            cache = get_cache_instance()
+            cached_data = cache.load_cached_data(codinstalacao, pdf_path)
+            if cached_data:
+                return cached_data
+        except Exception as e:
+            parser_logger.warning(f"Erro ao acessar cache: {str(e)}")
+    
+    processing_start_time = datetime.now()
+    
     # 1) Extrar os dados do PDF via texto
     texto = _extrair_texto_pdf(pdf_path)
     # logging.info(f"texto:\n{texto}\n\n")
     if via_regex:
         try:
             resultado = extrair_dados_completos_da_fatura_regex(texto)
+            
+            # Salva no cache se sucesso
+            if use_cache and codinstalacao and "error" not in resultado:
+                try:
+                    processing_time = (datetime.now() - processing_start_time).total_seconds()
+                    processing_stats = {
+                        "processing_time_seconds": processing_time,
+                        "method_used": "regex",
+                        "parser_version": "v2.0"
+                    }
+                    cache = get_cache_instance()
+                    cache.save_cached_data(codinstalacao, pdf_path, resultado, processing_stats)
+                except Exception as cache_error:
+                    parser_logger.warning(f"Erro ao salvar no cache: {str(cache_error)}")
+            
             return resultado
         except Exception as e:
             import traceback
@@ -221,7 +255,23 @@ def extrair_dados_completos_da_fatura(
     try:
         clean_text = re.sub(r"^```json\s*|\s*```$", "", response.text.strip(), flags=re.MULTILINE)
         parser_logger.info(f"resposta do modelo:\n{clean_text}")
-        return json.loads(clean_text)
+        resultado = json.loads(clean_text)
+        
+        # Salva no cache se sucesso
+        if use_cache and codinstalacao and "error" not in resultado:
+            try:
+                processing_time = (datetime.now() - processing_start_time).total_seconds()
+                processing_stats = {
+                    "processing_time_seconds": processing_time,
+                    "method_used": "gemini",
+                    "parser_version": "v2.0"
+                }
+                cache = get_cache_instance()
+                cache.save_cached_data(codinstalacao, pdf_path, resultado, processing_stats)
+            except Exception as cache_error:
+                parser_logger.warning(f"Erro ao salvar no cache: {str(cache_error)}")
+        
+        return resultado
     except json.JSONDecodeError:
         parser_logger.error("❌ JSON mal formatado retornado pelo modelo:\n", response.text)
         return {"error": "JSON decoding error", "raw_response": response.text}

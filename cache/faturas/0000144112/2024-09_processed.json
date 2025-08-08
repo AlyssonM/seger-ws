@@ -1,0 +1,156 @@
+{
+  "file_info": {
+    "filename": "fatura_SET-2024.pdf",
+    "file_path": "/home/user/studio/seger-ws/faturas_edp/0000144112/fatura_SET-2024.pdf",
+    "file_hash": "sha256:db18b5e348f7add3c55b1570222b5778f18b1ffa5c89e78b6f0a99a412fe02e1",
+    "processed_at": "2025-08-08T04:00:56.889526",
+    "parser_version": "v2.0"
+  },
+  "extracted_data": {
+    "identificacao": {
+      "unidade": "Secretaria de Estado da Saude",
+      "endereco": "Rua Liberalino Lima, 1sn, Olaria / Vila Velha - ES, CEP: 29123-620",
+      "tensao": "11.400",
+      "tensaoUnid": "V",
+      "nivel_tensao": "média tensão",
+      "numero_instalacao": "0000144112",
+      "numero_cliente": "0152120900",
+      "subgrupo": "A4",
+      "classe": "PODER PUBLICO - ESTADUAL ",
+      "modalidade": "verde",
+      "mes_referencia": "09/2024"
+    },
+    "leituras": {
+      "leitura_inicio": "01/09/2024",
+      "leitura_fim": "30/09/2024"
+    },
+    "consumo_ativo": {
+      "ponta_kwh": 7661.52,
+      "fora_ponta_kwh": 73513.92,
+      "energia_injetada_kwh": 0.0,
+      "total_kwh": 81175.44
+    },
+    "demanda": {
+      "contratada_fp_kw": 180.0,
+      "maxima": [
+        {
+          "periodo": "ponta",
+          "valor_kw": 163.2
+        },
+        {
+          "periodo": "fora_ponta",
+          "valor_kw": 181.44
+        }
+      ],
+      "dmcr": [
+        {
+          "periodo": "ponta",
+          "valor_kw": 135.12
+        },
+        {
+          "periodo": "fora_ponta",
+          "valor_kw": 153.84
+        }
+      ],
+      "fora_ponta_kw": 181.44,
+      "tarifa_unitaria": 33.95927028,
+      "valor_total": 6161.0
+    },
+    "energia_reativa": {
+      "ponta_kvarh": 1961.52,
+      "fora_ponta_kvarh": 20008.8,
+      "total_kvarh": 21970.32,
+      "excedente": {
+        "ponta_kwh": 0.0,
+        "fora_ponta_kwh": 0.0,
+        "total_kwh": 0
+      }
+    },
+    "impostos": [
+      {
+        "nome": "PIS",
+        "aliquota": 112.0,
+        "base_calculo": 55833.55,
+        "valor": 625.33
+      },
+      {
+        "nome": "COFINS",
+        "aliquota": 515.0,
+        "base_calculo": 55833.55,
+        "valor": 2875.43
+      }
+    ],
+    "tarifas": [
+      {
+        "descricao": "TUSD",
+        "periodo": "ponta",
+        "quantidade": 7661.52,
+        "tarifa_unitaria": 1.3480419,
+        "valor_total": 10328.0
+      },
+      {
+        "descricao": "TUSD",
+        "periodo": "fora_ponta",
+        "quantidade": 73513.92,
+        "tarifa_unitaria": 0.11445628,
+        "valor_total": 8414.0
+      },
+      {
+        "descricao": "TE",
+        "periodo": "ponta",
+        "quantidade": 7661.52,
+        "tarifa_unitaria": 0.48499906,
+        "valor_total": 3715.0
+      },
+      {
+        "descricao": "TE",
+        "periodo": "fora_ponta",
+        "quantidade": 73513.92,
+        "tarifa_unitaria": 0.30441704,
+        "valor_total": 22378.0
+      }
+    ],
+    "componentes_extras": [
+      {
+        "descricao": "Demanda Não Utilizada",
+        "quantidade": 28.56,
+        "tarifa_unitaria": 33.95903361,
+        "valor_total": 969.87,
+        "valor_impostos": 60.81
+      },
+      {
+        "descricao": "Adicional Bandeira Vermelha",
+        "quantidade": 81175.44,
+        "tarifa_unitaria": 0.04761551,
+        "valor_total": 3865.21,
+        "valor_impostos": 242.35
+      },
+      {
+        "descricao": "Contribuição de Ilum. Pública - Lei Municipal",
+        "quantidade": 0.0,
+        "tarifa_unitaria": 0.0,
+        "valor_total": 766.52,
+        "valor_impostos": null
+      },
+      {
+        "descricao": "Retenção Demanda Imposto Renda",
+        "valor_total": 0.0,
+        "valor_impostos": -342.31
+      },
+      {
+        "descricao": "Retenção Imposto de Renda",
+        "valor_total": 0.0,
+        "valor_impostos": -584.43
+      }
+    ],
+    "valores_totais": {
+      "valor_total_fatura": 56211.05,
+      "subtotal_encargos": 3500.0
+    }
+  },
+  "processing_stats": {
+    "processing_time_seconds": 0.142378,
+    "method_used": "regex",
+    "parser_version": "v2.0"
+  }
+}

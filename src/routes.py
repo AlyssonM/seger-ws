@@ -17,6 +17,7 @@ from src.utils.tarifas import get_tarifas_filtradas
 from src.utils.tarifas import calcular_tarifa_verde, calcular_tarifa_azul
 from src.utils.tarifas import extrair_tarifa_compacta_por_modalidade
 from src.utils.invoice_locator import get_invoice_locator
+from src.utils.fatura_cache import get_cache_instance
 
 def ordenar_faturas_mensais_cronologicamente(faturas_mensais):
     """Ordena faturas mensais cronologicamente por mês/ano"""
@@ -278,7 +279,12 @@ def processar_faturas_com_fallback(codinstalacao: str, data_inicio: str, data_fi
         
         # Extrai dados da fatura
         try:
-            dados_fatura = extrair_dados_completos_da_fatura(caminho_arquivo, via_regex)
+            dados_fatura = extrair_dados_completos_da_fatura(
+                caminho_arquivo, 
+                via_regex, 
+                codinstalacao=codinstalacao,
+                use_cache=True
+            )
             if "error" not in dados_fatura:
                 dados_faturas.append(dados_fatura)
                 arquivos_processados += 1
@@ -419,7 +425,12 @@ class FaturasJson(Resource):
                 
                 # Extrai dados da fatura
                 try:
-                    dados_fatura = extrair_dados_completos_da_fatura(caminho_arquivo, via_regex)
+                    dados_fatura = extrair_dados_completos_da_fatura(
+                        caminho_arquivo, 
+                        via_regex, 
+                        codinstalacao=codinstalacao,
+                        use_cache=True
+                    )
                     if "error" not in dados_fatura:
                         dados_consolidados.append({
                             "arquivo": nome_arquivo,
@@ -983,3 +994,107 @@ class CalcAzul(Resource):
             
         except Exception as e:
             return {"error": f"Erro no cálculo da tarifa azul: {str(e)}"}, 500
+
+
+# =============================================================================
+# ENDPOINTS DE GERENCIAMENTO DE CACHE
+# =============================================================================
+
+@api.route('/cache/status/<string:codinstalacao>')
+class CacheStatus(Resource):
+    @api.doc('cache_status')
+    def get(self, codinstalacao):
+        """Retorna status do cache para uma instalação específica"""
+        try:
+            cache = get_cache_instance()
+            stats = cache.get_cache_stats()
+            
+            if codinstalacao in stats.get("installations", {}):
+                return {
+                    "codinstalacao": codinstalacao,
+                    "cache_info": stats["installations"][codinstalacao],
+                    "cache_enabled": True
+                }
+            else:
+                return {
+                    "codinstalacao": codinstalacao,
+                    "cache_info": {},
+                    "cache_enabled": False,
+                    "message": "Nenhum cache encontrado para esta instalação"
+                }
+                
+        except Exception as e:
+            return {"error": f"Erro ao obter status do cache: {str(e)}"}, 500
+
+
+@api.route('/cache/stats')
+class CacheStats(Resource):
+    @api.doc('cache_stats')
+    def get(self):
+        """Retorna estatísticas globais do cache"""
+        try:
+            cache = get_cache_instance()
+            return cache.get_cache_stats()
+        except Exception as e:
+            return {"error": f"Erro ao obter estatísticas do cache: {str(e)}"}, 500
+
+
+@api.route('/cache/<string:codinstalacao>')
+class CacheClear(Resource):
+    @api.doc('cache_clear_installation')
+    def delete(self, codinstalacao):
+        """Remove todo o cache de uma instalação específica"""
+        try:
+            cache = get_cache_instance()
+            success = cache.clear_cache(codinstalacao=codinstalacao)
+            
+            if success:
+                return {
+                    "message": f"Cache da instalação {codinstalacao} removido com sucesso",
+                    "codinstalacao": codinstalacao
+                }
+            else:
+                return {"error": "Falha ao remover cache"}, 500
+                
+        except Exception as e:
+            return {"error": f"Erro ao remover cache: {str(e)}"}, 500
+
+
+@api.route('/cache/<string:codinstalacao>/<string:periodo>')
+class CacheClearPeriod(Resource):
+    @api.doc('cache_clear_period')
+    def delete(self, codinstalacao, periodo):
+        """Remove cache de um período específico (formato: YYYY-MM)"""
+        try:
+            cache = get_cache_instance()
+            success = cache.clear_cache(codinstalacao=codinstalacao, periodo=periodo)
+            
+            if success:
+                return {
+                    "message": f"Cache removido para {codinstalacao}/{periodo}",
+                    "codinstalacao": codinstalacao,
+                    "periodo": periodo
+                }
+            else:
+                return {"error": "Falha ao remover cache do período"}, 500
+                
+        except Exception as e:
+            return {"error": f"Erro ao remover cache do período: {str(e)}"}, 500
+
+
+@api.route('/cache')
+class CacheClearAll(Resource):
+    @api.doc('cache_clear_all')
+    def delete(self):
+        """Remove todo o cache do sistema"""
+        try:
+            cache = get_cache_instance()
+            success = cache.clear_cache()
+            
+            if success:
+                return {"message": "Todo o cache foi removido com sucesso"}
+            else:
+                return {"error": "Falha ao remover todo o cache"}, 500
+                
+        except Exception as e:
+            return {"error": f"Erro ao remover todo o cache: {str(e)}"}, 500
