@@ -6,6 +6,7 @@ Módulo para integração com Google Drive API para buscar PDFs de faturas como 
 import os
 import io
 import logging
+import time
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 import tempfile
@@ -63,7 +64,25 @@ class GoogleDriveClient:
                     return
                 
                 flow = InstalledAppFlow.from_client_secrets_file(self.credentials_path, SCOPES)
-                creds = flow.run_local_server(port=0)
+                # Configuração para ambiente Cloud Workstation
+                try:
+                    # Tenta autenticação local primeiro
+                    creds = flow.run_local_server(
+                        port=8080, 
+                        open_browser=False,
+                        bind_addr='0.0.0.0'
+                    )
+                    logging.info("Autenticação OAuth local concluída com sucesso")
+                except Exception as e:
+                    logging.error(f"Erro na autenticação OAuth local: {e}")
+                    try:
+                        # Fallback para console (método correto)
+                        auth_url, _ = flow.authorization_url(prompt='consent')
+                        logging.error(f"Abra esta URL no navegador para autorizar: {auth_url}")
+                        return  # Sai da função se não conseguir autenticar
+                    except Exception as e2:
+                        logging.error(f"Erro na autenticação manual: {e2}")
+                        return
             
             # Salva as credenciais para próximas execuções
             with open(self.token_path, 'w') as token:
@@ -140,7 +159,7 @@ class GoogleDriveClient:
     
     def download_file(self, file_id: str, filename: str, download_path: str = None) -> Optional[str]:
         """
-        Baixa um arquivo do Google Drive
+        Baixa um arquivo do Google Drive com retry e melhor tratamento de erros
         
         Args:
             file_id: ID do arquivo no Google Drive
@@ -153,29 +172,54 @@ class GoogleDriveClient:
         if not self.is_available():
             return None
         
-        try:
-            request = self.service.files().get_media(fileId=file_id)
-            
-            if download_path:
-                os.makedirs(download_path, exist_ok=True)
-                file_path = os.path.join(download_path, filename)
-            else:
-                # Usa pasta temporária
-                temp_dir = tempfile.mkdtemp()
-                file_path = os.path.join(temp_dir, filename)
-            
-            with io.FileIO(file_path, 'wb') as fh:
-                downloader = MediaIoBaseDownload(fh, request)
-                done = False
-                while done is False:
-                    status, done = downloader.next_chunk()
-            
-            logging.info(f"Arquivo {filename} baixado para {file_path}")
-            return file_path
-            
-        except Exception as e:
-            logging.error(f"Erro ao baixar arquivo {filename}: {str(e)}")
-            return None
+        max_retries = 3
+        retry_delay = 1
+        
+        for attempt in range(max_retries):
+            try:
+                request = self.service.files().get_media(fileId=file_id)
+                
+                if download_path:
+                    os.makedirs(download_path, exist_ok=True)
+                    file_path = os.path.join(download_path, filename)
+                else:
+                    # Usa pasta temporária
+                    temp_dir = tempfile.mkdtemp()
+                    file_path = os.path.join(temp_dir, filename)
+                
+                # Remove arquivo existente se houver
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                
+                with io.FileIO(file_path, 'wb') as fh:
+                    downloader = MediaIoBaseDownload(fh, request, chunksize=1024*1024)  # 1MB chunks
+                    done = False
+                    while done is False:
+                        try:
+                            status, done = downloader.next_chunk()
+                            if status:
+                                logging.debug(f"Download progress: {int(status.progress() * 100)}%")
+                        except Exception as chunk_error:
+                            logging.warning(f"Erro no chunk, tentando continuar: {str(chunk_error)}")
+                            break
+                
+                # Verifica se o arquivo foi baixado com sucesso
+                if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+                    logging.info(f"Arquivo {filename} baixado para {file_path}")
+                    return file_path
+                else:
+                    raise Exception("Arquivo baixado está vazio ou não foi criado")
+                    
+            except Exception as e:
+                logging.error(f"Tentativa {attempt + 1}/{max_retries} - Erro ao baixar arquivo {filename}: {str(e)}")
+                
+                if attempt < max_retries - 1:
+                    logging.info(f"Aguardando {retry_delay}s antes de tentar novamente...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                else:
+                    logging.error(f"Falha definitiva ao baixar arquivo {filename} após {max_retries} tentativas")
+                    return None
     
     def extract_reference_from_filename(self, filename: str) -> Optional[str]:
         """
