@@ -78,11 +78,11 @@ class GoogleDriveClient:
     
     def search_invoice_files(self, codinstalacao: str, folder_name: str = "Faturas EDP") -> List[Dict[str, Any]]:
         """
-        Busca arquivos PDF de faturas no Google Drive
+        Busca arquivos PDF de faturas no Google Drive usando estrutura de pastas por instalação
         
         Args:
             codinstalacao: Código da instalação
-            folder_name: Nome da pasta no Drive onde buscar
+            folder_name: Nome da pasta raiz no Drive (padrão: "Faturas EDP")
             
         Returns:
             Lista de arquivos encontrados com metadados
@@ -91,21 +91,36 @@ class GoogleDriveClient:
             return []
         
         try:
-            # Primeiro, encontra a pasta
-            folder_query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder'"
-            folder_results = self.service.files().list(q=folder_query).execute()
-            folders = folder_results.get('files', [])
+            # Primeiro, encontra a pasta raiz "Faturas EDP"
+            root_folder_query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder'"
+            root_folder_results = self.service.files().list(q=root_folder_query).execute()
+            root_folders = root_folder_results.get('files', [])
             
-            if not folders:
-                logging.warning(f"Pasta '{folder_name}' não encontrada no Google Drive")
+            if not root_folders:
+                logging.warning(f"Pasta raiz '{folder_name}' não encontrada no Google Drive")
                 return []
             
-            folder_id = folders[0]['id']
+            root_folder_id = root_folders[0]['id']
             
-            # Busca PDFs na pasta que contenham o código da instalação
+            # Busca a subpasta com o código da instalação
+            instalacao_folder_query = (
+                f"'{root_folder_id}' in parents and "
+                f"name='{codinstalacao}' and "
+                f"mimeType='application/vnd.google-apps.folder'"
+            )
+            
+            instalacao_folder_results = self.service.files().list(q=instalacao_folder_query).execute()
+            instalacao_folders = instalacao_folder_results.get('files', [])
+            
+            if not instalacao_folders:
+                logging.warning(f"Pasta da instalação '{codinstalacao}' não encontrada em '{folder_name}'")
+                return []
+            
+            instalacao_folder_id = instalacao_folders[0]['id']
+            
+            # Busca todos os PDFs na pasta da instalação
             file_query = (
-                f"'{folder_id}' in parents and "
-                f"name contains '{codinstalacao}' and "
+                f"'{instalacao_folder_id}' in parents and "
                 f"mimeType='application/pdf'"
             )
             
@@ -115,7 +130,7 @@ class GoogleDriveClient:
             ).execute()
             
             files = results.get('files', [])
-            logging.info(f"Encontrados {len(files)} arquivos no Google Drive para instalação {codinstalacao}")
+            logging.info(f"Encontrados {len(files)} arquivos no Google Drive para instalação {codinstalacao} (pasta: {folder_name}/{codinstalacao})")
             
             return files
             

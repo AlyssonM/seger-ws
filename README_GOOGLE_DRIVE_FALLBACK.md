@@ -132,10 +132,16 @@ GOOGLE_DRIVE_TOKEN_PATH=token.json
 ```
 Google Drive/
 └── Faturas EDP/
-    ├── fatura_0000144112_JAN-2025.pdf
-    ├── fatura_0000144112_FEV-2025.pdf
-    └── 0000144112_MAR-2025.pdf
+    └── 0000144112/
+        ├── fatura_JAN-2025.pdf
+        ├── fatura_FEV-2025.pdf
+        └── fatura_MAR-2025.pdf
+    └── 0000555666/
+        ├── fatura_JAN-2025.pdf
+        └── ... outros arquivos
 ```
+
+**Organização por Instalação**: Cada instalação tem sua subpasta usando o código como nome.
 
 ## Arquivos Criados/Modificados
 

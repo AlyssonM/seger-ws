@@ -41,17 +41,25 @@ Este documento explica como configurar o sistema de fallback para buscar PDFs de
 ```
 Google Drive/
 └── Faturas EDP/
-    ├── fatura_0000144112_JAN-2025.pdf
-    ├── fatura_0000144112_FEV-2025.pdf
-    └── ... outros arquivos
+    └── 0000144112/
+        ├── fatura_JAN-2025.pdf
+        ├── fatura_FEV-2025.pdf
+        └── ... outros arquivos
+    └── 0000555666/
+        ├── fatura_JAN-2025.pdf
+        └── ... outros arquivos
 ```
+
+**IMPORTANTE**: Cada instalação deve ter sua própria subpasta dentro de "Faturas EDP", usando o código da instalação como nome da pasta.
 
 ### Convenção de Nomes dos Arquivos
 
 O sistema reconhece os seguintes padrões de nomes:
-- `fatura_CODIGO_MES-ANO.pdf` (ex: `fatura_0000144112_JAN-2025.pdf`)
-- `CODIGO_MES-ANO.pdf` (ex: `0000144112_JAN-2025.pdf`)
-- `Fatura_EDP_MES-ANO_CODIGO.pdf` (ex: `Fatura_EDP_JAN-2025_0000144112.pdf`)
+- `fatura_MES-ANO.pdf` (ex: `fatura_JAN-2025.pdf`)
+- `MES-ANO.pdf` (ex: `JAN-2025.pdf`)
+- `Fatura_EDP_MES-ANO.pdf` (ex: `Fatura_EDP_JAN-2025.pdf`)
+
+**Nota**: O código da instalação não é mais necessário no nome do arquivo, pois é identificado pela pasta.
 
 ## Configuração de Ambiente
 

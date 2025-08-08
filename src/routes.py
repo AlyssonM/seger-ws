@@ -567,34 +567,13 @@ class OtimizacaoVerde(Resource):
             return {"error": "Parâmetros obrigatórios: data_inicio, data_fim, codInstalacao"}, 400
             
         try:
-            # Busca dados das faturas
-            import glob
-            import os
+            # Usa sistema de fallback para buscar faturas
+            dados_faturas, info_processamento = processar_faturas_com_fallback(
+                codinstalacao, data_inicio, data_fim, True
+            )
             
-            pasta_instalacao = os.path.join("faturas_edp", codinstalacao)
-            padrao_arquivos = os.path.join(pasta_instalacao, "*.pdf")
-            arquivos_pdf = glob.glob(padrao_arquivos)
-            
-            if not arquivos_pdf:
-                return {"error": f"Nenhuma fatura encontrada para instalação {codinstalacao}"}, 404
-            
-            dt_ini = ref_to_date(data_inicio)
-            dt_fim = ref_to_date(data_fim)
-            
-            # Extrai dados das faturas no período
-            dados_faturas = []
-            for arquivo in arquivos_pdf:
-                nome_arquivo = os.path.basename(arquivo)
-                if "_" in nome_arquivo:
-                    ref = nome_arquivo.split("_")[-1].replace(".pdf", "")
-                    ref_dt = ref_to_date(ref)
-                    if dt_ini <= ref_dt <= dt_fim:
-                        dados_fatura = extrair_dados_completos_da_fatura(arquivo, True)
-                        if "error" not in dados_fatura:
-                            dados_faturas.append(dados_fatura)
-            
-            if not dados_faturas:
-                return {"error": "Nenhuma fatura válida encontrada no período"}, 404
+            if "error" in info_processamento:
+                return {"error": info_processamento["error"]}, 404
             
             # Busca tarifas para o período
             tarifas_raw = get_tarifas_filtradas(mes_ano=data_inicio, distribuidora=distribuidora, detalhe="Não se Aplica")
@@ -661,34 +640,13 @@ class OtimizacaoAzul(Resource):
             return {"error": "Parâmetros obrigatórios: data_inicio, data_fim, codInstalacao"}, 400
             
         try:
-            # Busca dados das faturas
-            import glob
-            import os
+            # Usa sistema de fallback para buscar faturas
+            dados_faturas, info_processamento = processar_faturas_com_fallback(
+                codinstalacao, data_inicio, data_fim, True
+            )
             
-            pasta_instalacao = os.path.join("faturas_edp", codinstalacao)
-            padrao_arquivos = os.path.join(pasta_instalacao, "*.pdf")
-            arquivos_pdf = glob.glob(padrao_arquivos)
-            
-            if not arquivos_pdf:
-                return {"error": f"Nenhuma fatura encontrada para instalação {codinstalacao}"}, 404
-            
-            dt_ini = ref_to_date(data_inicio)
-            dt_fim = ref_to_date(data_fim)
-            
-            # Extrai dados das faturas no período
-            dados_faturas = []
-            for arquivo in arquivos_pdf:
-                nome_arquivo = os.path.basename(arquivo)
-                if "_" in nome_arquivo:
-                    ref = nome_arquivo.split("_")[-1].replace(".pdf", "")
-                    ref_dt = ref_to_date(ref)
-                    if dt_ini <= ref_dt <= dt_fim:
-                        dados_fatura = extrair_dados_completos_da_fatura(arquivo, True)
-                        if "error" not in dados_fatura:
-                            dados_faturas.append(dados_fatura)
-            
-            if not dados_faturas:
-                return {"error": "Nenhuma fatura válida encontrada no período"}, 404
+            if "error" in info_processamento:
+                return {"error": info_processamento["error"]}, 404
             
             # Busca tarifas para o período
             tarifas_raw = get_tarifas_filtradas(mes_ano=data_inicio, distribuidora=distribuidora, detalhe="Não se Aplica")
@@ -877,34 +835,13 @@ class CalcVerde(Resource):
             return {"error": "Parâmetros obrigatórios: data_inicio, data_fim, codInstalacao, periodo_tarifas"}, 400
             
         try:
-            # Busca dados das faturas
-            import glob
-            import os
+            # Usa sistema de fallback para buscar faturas
+            dados_faturas, info_processamento = processar_faturas_com_fallback(
+                codinstalacao, data_inicio, data_fim, via_regex
+            )
             
-            pasta_instalacao = os.path.join("faturas_edp", codinstalacao)
-            padrao_arquivos = os.path.join(pasta_instalacao, "*.pdf")
-            arquivos_pdf = glob.glob(padrao_arquivos)
-            
-            if not arquivos_pdf:
-                return {"error": f"Nenhuma fatura encontrada para instalação {codinstalacao}"}, 404
-            
-            dt_ini = ref_to_date(data_inicio)
-            dt_fim = ref_to_date(data_fim)
-            
-            # Extrai dados das faturas no período
-            dados_faturas = []
-            for arquivo in arquivos_pdf:
-                nome_arquivo = os.path.basename(arquivo)
-                if "_" in nome_arquivo:
-                    ref = nome_arquivo.split("_")[-1].replace(".pdf", "")
-                    ref_dt = ref_to_date(ref)
-                    if dt_ini <= ref_dt <= dt_fim:
-                        dados_fatura = extrair_dados_completos_da_fatura(arquivo, via_regex)
-                        if "error" not in dados_fatura:
-                            dados_faturas.append(dados_fatura)
-            
-            if not dados_faturas:
-                return {"error": "Nenhuma fatura válida encontrada no período"}, 404
+            if "error" in info_processamento:
+                return {"error": info_processamento["error"]}, 404
             
             # Busca tarifas para o período
             tarifas_raw = get_tarifas_filtradas(mes_ano=periodo_tarifas, distribuidora=distribuidora, detalhe="Não se Aplica")
@@ -982,34 +919,13 @@ class CalcAzul(Resource):
             return {"error": "Parâmetros obrigatórios: data_inicio, data_fim, codInstalacao, periodo_tarifas"}, 400
             
         try:
-            # Busca dados das faturas
-            import glob
-            import os
+            # Usa sistema de fallback para buscar faturas
+            dados_faturas, info_processamento = processar_faturas_com_fallback(
+                codinstalacao, data_inicio, data_fim, via_regex
+            )
             
-            pasta_instalacao = os.path.join("faturas_edp", codinstalacao)
-            padrao_arquivos = os.path.join(pasta_instalacao, "*.pdf")
-            arquivos_pdf = glob.glob(padrao_arquivos)
-            
-            if not arquivos_pdf:
-                return {"error": f"Nenhuma fatura encontrada para instalação {codinstalacao}"}, 404
-            
-            dt_ini = ref_to_date(data_inicio)
-            dt_fim = ref_to_date(data_fim)
-            
-            # Extrai dados das faturas no período
-            dados_faturas = []
-            for arquivo in arquivos_pdf:
-                nome_arquivo = os.path.basename(arquivo)
-                if "_" in nome_arquivo:
-                    ref = nome_arquivo.split("_")[-1].replace(".pdf", "")
-                    ref_dt = ref_to_date(ref)
-                    if dt_ini <= ref_dt <= dt_fim:
-                        dados_fatura = extrair_dados_completos_da_fatura(arquivo, via_regex)
-                        if "error" not in dados_fatura:
-                            dados_faturas.append(dados_fatura)
-            
-            if not dados_faturas:
-                return {"error": "Nenhuma fatura válida encontrada no período"}, 404
+            if "error" in info_processamento:
+                return {"error": info_processamento["error"]}, 404
             
             # Busca tarifas para o período
             tarifas_raw = get_tarifas_filtradas(mes_ano=periodo_tarifas, distribuidora=distribuidora, detalhe="Não se Aplica")
