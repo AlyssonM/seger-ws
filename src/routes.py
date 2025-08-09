@@ -248,6 +248,73 @@ def obter_caminho_arquivo_fatura(arquivo_info):
         return None
 
 
+def processar_faturas_cache_first(codinstalacao: str, data_inicio: str, data_fim: str, via_regex: bool = True):
+    """
+    Função otimizada que verifica primeiro o cache JSON antes de buscar arquivos.
+    
+    Returns:
+        tuple: (dados_faturas, info_processamento)
+    """
+    from src.utils.fatura_cache import FaturaCache
+    
+    # Inicializa o cache
+    cache_manager = FaturaCache()
+    
+    # Converte datas para o período de busca
+    try:
+        dt_inicio = ref_to_date(data_inicio)
+        dt_fim = ref_to_date(data_fim)
+        
+        # Gera lista de meses no período
+        meses_periodo = []
+        current_date = dt_inicio.replace(day=1)
+        while current_date <= dt_fim:
+            mes_ref = current_date.strftime("%m/%Y")  # Para logging
+            mes_ref_cache = current_date.strftime("%Y-%m")  # Para cache (formato YYYY-MM)
+            meses_periodo.append((mes_ref, mes_ref_cache))
+            # Próximo mês
+            if current_date.month == 12:
+                current_date = current_date.replace(year=current_date.year + 1, month=1)
+            else:
+                current_date = current_date.replace(month=current_date.month + 1)
+        
+    except Exception as e:
+        current_app.logger.error(f"Erro ao processar datas: {str(e)}")
+        meses_periodo = []
+    
+    dados_faturas = []
+    dados_do_cache = 0
+    dados_extraidos = 0
+    
+    # Primeiro tenta carregar do cache
+    for mes_ref, mes_ref_cache in meses_periodo:
+        try:
+            if cache_manager.is_cache_valid_by_period(codinstalacao, mes_ref_cache):
+                dados_cache = cache_manager.load_cached_data_by_period(codinstalacao, mes_ref_cache)
+                if dados_cache:
+                    dados_faturas.append(dados_cache)
+                    dados_do_cache += 1
+                    current_app.logger.info(f"✅ Dados de {mes_ref} carregados do cache para {codinstalacao}")
+                    continue
+        except Exception as e:
+            current_app.logger.warning(f"Erro ao carregar cache para {mes_ref}: {str(e)}")
+    
+    # Se temos dados suficientes do cache, retorna
+    if len(dados_faturas) >= len(meses_periodo) * 0.8:  # 80% dos dados disponíveis no cache
+        current_app.logger.info(f"Usando dados do cache para {codinstalacao}: {dados_do_cache} meses")
+        return dados_faturas, {
+            "total_arquivos_encontrados": len(dados_faturas),
+            "arquivos_processados": len(dados_faturas),
+            "arquivos_com_erro": 0,
+            "fonte_dados": "cache",
+            "dados_do_cache": dados_do_cache,
+            "dados_extraidos": 0
+        }
+    
+    # Se não tem dados suficientes no cache, usa fallback tradicional
+    current_app.logger.info(f"Cache insuficiente para {codinstalacao}, buscando arquivos...")
+    return processar_faturas_com_fallback(codinstalacao, data_inicio, data_fim, via_regex)
+
 def processar_faturas_com_fallback(codinstalacao: str, data_inicio: str, data_fim: str, via_regex: bool = True):
     """
     Função auxiliar para processar faturas usando fallback, retornando dados extraídos
@@ -399,52 +466,33 @@ class FaturasJson(Resource):
         dt_ini, dt_fim = min(dt1, dt2), max(dt1, dt2)
 
         try:
-            # Busca arquivos usando sistema de fallback (local + Google Drive)
-            arquivos_info = buscar_arquivos_fatura_com_fallback(codinstalacao, data_inicio, data_fim)
+            # Usa sistema cache-first para obter dados de faturas
+            dados_faturas, info_processamento = processar_faturas_cache_first(
+                codinstalacao, data_inicio, data_fim, via_regex
+            )
             
-            if not arquivos_info:
+            if "error" in info_processamento:
+                return {"error": info_processamento["error"]}, 404
+            
+            if not dados_faturas:
                 return {"error": f"Nenhuma fatura encontrada para instalação {codinstalacao}"}, 404
             
-            # Processa arquivos encontrados
+            # Dados já estão processados e consolidados do cache/fallback
+            # Transforma para formato esperado pelo endpoint faturas-json
             dados_consolidados = []
-            arquivos_processados = 0
-            arquivos_com_erro = 0
+            for dados_fatura in dados_faturas:
+                # Extrai informações do cabeçalho para compatibilidade
+                identificacao = dados_fatura.get('identificacao', {})
+                mes_ref = identificacao.get('mes_referencia', '')
+                
+                dados_consolidados.append({
+                    "referencia": mes_ref,
+                    "dados": dados_fatura,
+                    "fonte": info_processamento.get("fonte_dados", "cache")
+                })
             
-            for arquivo_info in arquivos_info:
-                nome_arquivo = arquivo_info['arquivo']
-                referencia = arquivo_info['referencia']
-                fonte = arquivo_info['fonte']
-                
-                # Obtém caminho do arquivo (baixa do Drive se necessário)
-                caminho_arquivo = obter_caminho_arquivo_fatura(arquivo_info)
-                
-                if not caminho_arquivo:
-                    current_app.logger.warning(f"Não foi possível obter arquivo {nome_arquivo} da fonte {fonte}")
-                    arquivos_com_erro += 1
-                    continue
-                
-                # Extrai dados da fatura
-                try:
-                    dados_fatura = extrair_dados_completos_da_fatura(
-                        caminho_arquivo, 
-                        via_regex, 
-                        codinstalacao=codinstalacao,
-                        use_cache=True
-                    )
-                    if "error" not in dados_fatura:
-                        dados_consolidados.append({
-                            "arquivo": nome_arquivo,
-                            "referencia": referencia,
-                            "dados": dados_fatura,
-                            "fonte": fonte  # Inclui informação da fonte
-                        })
-                        arquivos_processados += 1
-                    else:
-                        current_app.logger.warning(f"Erro ao extrair dados de {nome_arquivo}: {dados_fatura.get('error', 'Erro desconhecido')}")
-                        arquivos_com_erro += 1
-                except Exception as e:
-                    current_app.logger.error(f"Erro ao processar arquivo {nome_arquivo}: {str(e)}")
-                    arquivos_com_erro += 1
+            arquivos_processados = len(dados_faturas)
+            arquivos_com_erro = info_processamento.get("arquivos_com_erro", 0)
             
             # Log de resultados
             current_app.logger.info(f"Processamento concluído: {arquivos_processados} sucessos, {arquivos_com_erro} erros")
@@ -578,8 +626,8 @@ class OtimizacaoVerde(Resource):
             return {"error": "Parâmetros obrigatórios: data_inicio, data_fim, codInstalacao"}, 400
             
         try:
-            # Usa sistema de fallback para buscar faturas
-            dados_faturas, info_processamento = processar_faturas_com_fallback(
+            # Usa sistema cache-first para buscar faturas
+            dados_faturas, info_processamento = processar_faturas_cache_first(
                 codinstalacao, data_inicio, data_fim, True
             )
             
@@ -651,8 +699,8 @@ class OtimizacaoAzul(Resource):
             return {"error": "Parâmetros obrigatórios: data_inicio, data_fim, codInstalacao"}, 400
             
         try:
-            # Usa sistema de fallback para buscar faturas
-            dados_faturas, info_processamento = processar_faturas_com_fallback(
+            # Usa sistema cache-first para buscar faturas
+            dados_faturas, info_processamento = processar_faturas_cache_first(
                 codinstalacao, data_inicio, data_fim, True
             )
             
@@ -723,8 +771,8 @@ class AnalisarFatura(Resource):
             return {"error": "Parâmetros obrigatórios: data_inicio, data_fim, codInstalacao, periodo, distribuidora"}, 400
             
         try:
-            # Usa sistema de fallback para buscar faturas
-            dados_faturas, info_processamento = processar_faturas_com_fallback(
+            # Usa sistema cache-first para buscar faturas
+            dados_faturas, info_processamento = processar_faturas_cache_first(
                 codinstalacao, data_inicio, data_fim, via_regex
             )
             
@@ -846,8 +894,8 @@ class CalcVerde(Resource):
             return {"error": "Parâmetros obrigatórios: data_inicio, data_fim, codInstalacao, periodo_tarifas"}, 400
             
         try:
-            # Usa sistema de fallback para buscar faturas
-            dados_faturas, info_processamento = processar_faturas_com_fallback(
+            # Usa sistema cache-first para buscar faturas
+            dados_faturas, info_processamento = processar_faturas_cache_first(
                 codinstalacao, data_inicio, data_fim, via_regex
             )
             
@@ -930,8 +978,8 @@ class CalcAzul(Resource):
             return {"error": "Parâmetros obrigatórios: data_inicio, data_fim, codInstalacao, periodo_tarifas"}, 400
             
         try:
-            # Usa sistema de fallback para buscar faturas
-            dados_faturas, info_processamento = processar_faturas_com_fallback(
+            # Usa sistema cache-first para buscar faturas
+            dados_faturas, info_processamento = processar_faturas_cache_first(
                 codinstalacao, data_inicio, data_fim, via_regex
             )
             

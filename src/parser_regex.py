@@ -423,7 +423,36 @@ def extrair_dados_completos_da_fatura_regex(texto: str) -> Dict[str, Any]:
             "ponta_kvarh": dre_ponta,
             "fora_ponta_kvarh": dre_fora_ponta
         }
-        
+    
+    # ---------- PERDAS ----------
+    perdas = []
+    perdas_pat = rf"""
+        (?P<descricao>
+            Perdas\s+(?P<tipo>Consumo|Demanda|DMCR|ERE)\s+(?P<periodo>Ponta|FPonta)
+        )\s+
+        \d+\s+\d+\s+                                 # Leituras anteriores e atuais
+        (?P<tarifa_unitaria>{NUMBER})\s+
+        (?P<valor_total>{NUMBER})\s+
+        (?P<unidade>KWH|KW)
+    """
+    for match in re.finditer(perdas_pat, texto, re.I | re.X):
+        descricao = match.group("descricao").strip()
+        tipo = match.group("tipo").strip().lower()
+        periodo = match.group("periodo").strip().lower().replace("fponta", "fora_ponta")
+
+        perdas.append({
+            "descricao": descricao,
+            "tipo": tipo,
+            "periodo": periodo,
+            "tarifa_unitaria": _clean_num(match.group("tarifa_unitaria")),
+            "valor_total": _clean_num(match.group("valor_total")),
+            "unidade": match.group("unidade")
+        })
+
+    if perdas:
+        out["perdas"] = perdas
+
+
     # ---------- DEMANDA (custos)  -----------------------------------
     # procura a primeira linha que contenha "Demanda" + 3 números
     for ln in texto.splitlines():

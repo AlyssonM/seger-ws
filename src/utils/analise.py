@@ -402,11 +402,15 @@ class AnalisadorTarifario:
         resultado_azul = self.otimizar_modalidade_azul()
         resultados.append(resultado_azul)
         
-        # Encontra melhor opção
-        resultados_viaveis = [r for r in resultados if r.viavel and r.economia_anual > 0]
+        # Encontra melhor opção baseada no menor custo global
+        resultados_viaveis = [r for r in resultados if r.viavel]
         if resultados_viaveis:
-            melhor_opcao = max(resultados_viaveis, key=lambda x: x.economia_anual)
-            economia_maxima = melhor_opcao.economia_anual
+            # Seleciona a opção com o menor custo otimizado (menor custo global)
+            melhor_opcao = min(resultados_viaveis, key=lambda x: x.custo_otimizado)
+            
+            # Calcula economia real comparando com o custo atual da modalidade atual
+            custo_atual_real = next((r.custo_atual for r in resultados if r.modalidade == self.modalidade_atual), 0.0)
+            economia_maxima = max(0.0, custo_atual_real - melhor_opcao.custo_otimizado)
         else:
             # Se nenhuma opção é viável, usa a atual
             atual = next((r for r in resultados if r.modalidade == self.modalidade_atual), resultados[0])
@@ -439,18 +443,27 @@ class AnalisadorTarifario:
         """Gera recomendações baseadas nos resultados"""
         recomendacoes = []
         
+        # Calcula economia real comparando com o custo atual da modalidade atual
+        custo_atual_real = next((r.custo_atual for r in resultados if r.modalidade == self.modalidade_atual), 0.0)
+        economia_real = max(0.0, custo_atual_real - melhor_opcao.custo_otimizado)
+        economia_percentual_real = (economia_real / custo_atual_real) * 100 if custo_atual_real > 0 else 0.0
+        
         if melhor_opcao.modalidade == self.modalidade_atual:
-            if melhor_opcao.economia_anual > 0:
+            if economia_real > 0:
                 recomendacoes.append(f"Manter modalidade {melhor_opcao.modalidade.value.title()} "
                                    f"mas ajustar demanda contratada para economia de "
-                                   f"R$ {melhor_opcao.economia_anual:.2f} anuais")
+                                   f"R$ {economia_real:.2f} anuais")
             else:
                 recomendacoes.append(f"Modalidade atual ({self.modalidade_atual.value.title()}) "
                                    f"já está otimizada")
         else:
-            recomendacoes.append(f"Migrar para modalidade {melhor_opcao.modalidade.value.title()} "
-                               f"para economia de R$ {melhor_opcao.economia_anual:.2f} anuais "
-                               f"({melhor_opcao.economia_percentual:.1f}%)")
+            if economia_real > 0:
+                recomendacoes.append(f"Migrar para modalidade {melhor_opcao.modalidade.value.title()} "
+                                   f"para economia de R$ {economia_real:.2f} anuais "
+                                   f"({economia_percentual_real:.1f}%)")
+            else:
+                recomendacoes.append(f"Modalidade {melhor_opcao.modalidade.value.title()} tem menor custo "
+                                   f"mas sem economia significativa em relação à atual")
         
         # Verifica padrão de consumo
         if self.consumo_total["ponta"] > 0:
@@ -464,18 +477,23 @@ class AnalisadorTarifario:
     def _gerar_resumo_executivo(self, resultados: List[ResultadoOtimizacao], 
                               melhor_opcao: ResultadoOtimizacao) -> Dict[str, Any]:
         """Gera resumo executivo da análise"""
+        # Calcula economia real comparando com o custo atual da modalidade atual
+        custo_atual_real = next((r.custo_atual for r in resultados if r.modalidade == self.modalidade_atual), 0.0)
+        economia_real = max(0.0, custo_atual_real - melhor_opcao.custo_otimizado)
+        economia_percentual_real = (economia_real / custo_atual_real) * 100 if custo_atual_real > 0 else 0.0
+        
         return {
             "modalidade_atual": self.modalidade_atual.value,
             "modalidade_recomendada": melhor_opcao.modalidade.value,
             "mudanca_necessaria": melhor_opcao.modalidade != self.modalidade_atual,
-            "economia_anual_maxima": melhor_opcao.economia_anual,
-            "economia_percentual_maxima": melhor_opcao.economia_percentual,
-            "payback_meses": self._calcular_payback(melhor_opcao),
+            "economia_anual_maxima": economia_real,
+            "economia_percentual_maxima": economia_percentual_real,
+            "payback_meses": self._calcular_payback_com_economia_real(melhor_opcao, economia_real),
             "consumo_total_kwh": self.consumo_total["total"],
             "demanda_maxima_kw": max(self.demanda_maxima.values()),
             "periodo_analisado": f"{len(self.fatura_dados)} meses",
-            "viabilidade": "Alta" if melhor_opcao.economia_percentual > 10 else 
-                          "Média" if melhor_opcao.economia_percentual > 5 else "Baixa"
+            "viabilidade": "Alta" if economia_percentual_real > 10 else 
+                          "Média" if economia_percentual_real > 5 else "Baixa"
         }
     
     def _calcular_payback(self, resultado: ResultadoOtimizacao) -> float:
@@ -487,6 +505,16 @@ class AnalisadorTarifario:
             return float('inf')
             
         return (custo_mudanca / resultado.economia_anual) * 12
+    
+    def _calcular_payback_com_economia_real(self, resultado: ResultadoOtimizacao, economia_real: float) -> float:
+        """Calcula payback em meses usando economia real"""
+        # Estimativa de custos de mudança (análise técnica, adequações)
+        custo_mudanca = 5000.0  # R$ 5.000 estimado
+        
+        if economia_real <= 0:
+            return float('inf')
+            
+        return (custo_mudanca / economia_real) * 12
     
     def _extrair_dados_mensais(self) -> List[Dict[str, Any]]:
         """Extrai dados mensais calculando valores usando funções de cálculo tarifário"""

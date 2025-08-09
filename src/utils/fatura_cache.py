@@ -224,6 +224,33 @@ class FaturaCache:
             logging.error(f"Erro ao salvar no cache: {str(e)}")
             return False
     
+    def load_cached_data_by_period(self, codinstalacao: str, periodo: str) -> Optional[Dict[str, Any]]:
+        """
+        Carrega dados do cache diretamente por período.
+        
+        Args:
+            codinstalacao: Código da instalação  
+            periodo: Período no formato YYYY-MM
+            
+        Returns:
+            Dados extraídos se cache válido, None caso contrário
+        """
+        try:
+            cache_file_path = self._get_cache_file_path(codinstalacao, periodo)
+            
+            if not os.path.exists(cache_file_path):
+                return None
+            
+            # Carrega dados do cache
+            with open(cache_file_path, 'r', encoding='utf-8') as f:
+                cached_data = json.load(f)
+            
+            return cached_data.get('extracted_data')
+            
+        except Exception as e:
+            logging.error(f"Erro ao carregar cache por período {periodo}: {str(e)}")
+            return None
+
     def load_cached_data(self, codinstalacao: str, file_path: str) -> Optional[Dict[str, Any]]:
         """
         Carrega dados do cache se válidos.
@@ -263,6 +290,38 @@ class FaturaCache:
             logging.error(f"Erro ao carregar cache: {str(e)}")
             return None
     
+    def is_cache_valid_by_period(self, codinstalacao: str, periodo: str) -> bool:
+        """
+        Verifica se o cache é válido para um período específico.
+        
+        Args:
+            codinstalacao: Código da instalação
+            periodo: Período no formato YYYY-MM
+            
+        Returns:
+            bool: True se cache é válido
+        """
+        try:
+            cache_file_path = self._get_cache_file_path(codinstalacao, periodo)
+            
+            if not os.path.exists(cache_file_path):
+                return False
+            
+            # Carrega dados do cache
+            with open(cache_file_path, 'r', encoding='utf-8') as f:
+                cached_data = json.load(f)
+            
+            # Verifica TTL
+            processed_at = datetime.fromisoformat(cached_data["file_info"]["processed_at"])
+            if datetime.now() - processed_at > timedelta(days=self.ttl_days):
+                return False
+            
+            return True
+            
+        except Exception as e:
+            logging.error(f"Erro ao verificar validade do cache para {periodo}: {str(e)}")
+            return False
+
     def is_cache_valid(self, cache_data: Dict[str, Any], current_file_path: str) -> bool:
         """
         Verifica se o cache é válido.

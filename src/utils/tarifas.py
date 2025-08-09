@@ -138,6 +138,38 @@ def calcular_tarifa_verde(fatura_dados, tarifas, tarifa_ere, demanda_contratada 
     # icms_aliq = icms_media*100
 
     for dados in fatura_dados:
+
+        # perdas
+        perdas_consumo_ponta = sum(
+            c.get("valor_total", 0.0) or 0.0
+            for c in dados.get("perdas", [])
+            if "consumo ponta" in c.get("descricao", "").lower()
+        )
+
+        perdas_consumo_fponta = sum(
+            c.get("valor_total", 0.0) or 0.0
+            for c in dados.get("perdas", [])
+            if "consumo fponta" in c.get("descricao", "").lower()
+        )
+
+        perdas_demanda_ponta = sum(
+            c.get("valor_total", 0.0) or 0.0
+            for c in dados.get("perdas", [])
+            if "demanda ponta" in c.get("descricao", "").lower()
+        )
+
+        perdas_demanda_fponta = sum(
+            c.get("valor_total", 0.0) or 0.0
+            for c in dados.get("perdas", [])
+            if "demanda fponta" in c.get("descricao", "").lower()
+        )
+
+        perdas_ere = sum(
+            c.get("valor_total", 0.0) or 0.0
+            for c in dados.get("perdas", [])
+            if "ere" in c.get("descricao", "").lower()
+        )
+
         current_app.logger.debug(f"Mes: {dados['identificacao']['mes_referencia']}")
         consumo = dados["consumo_ativo"]
         demanda = dados["demanda"]
@@ -157,10 +189,10 @@ def calcular_tarifa_verde(fatura_dados, tarifas, tarifa_ere, demanda_contratada 
         current_app.logger.debug(f"tarifa_fp: {tusd_fp + te_fp}, tarifa_p: {tusd_p + te_p}")
         demanda_fp_tarifa = float(tarifas["DemandaForaPonta"])  # mesma para ponta e fora
         # logging.info(f"SCEE = {energia_injetada}")
-        energia_fp = consumo["fora_ponta_kwh"] * (tusd_fp + te_fp)
-        energia_p = consumo["ponta_kwh"] * (tusd_p + te_p)
+        energia_fp = (consumo["fora_ponta_kwh"] + perdas_consumo_fponta) * (tusd_fp + te_fp)
+        energia_p = (consumo["ponta_kwh"] + perdas_consumo_ponta)* (tusd_p + te_p)
         energia_compensada = energia_injetada * (tusd_fp + te_fp)
-        energia_reativa_ex = tarifa_ere * energia_reativa_ere["excedente"]["total_kwh"]
+        energia_reativa_ex = tarifa_ere * (energia_reativa_ere["excedente"]["total_kwh"] + perdas_ere)
         energia_total = energia_fp + energia_p
         current_app.logger.debug(f"custo energia fp: {energia_fp}")
         current_app.logger.debug(f"custo energia p: {energia_p}")
@@ -173,7 +205,7 @@ def calcular_tarifa_verde(fatura_dados, tarifas, tarifa_ere, demanda_contratada 
             demanda_contratada = float(demanda["contratada_fp_kw"])
 
         if consumo["energia_injetada_kwh"]:
-            demanda_max = demanda["fora_ponta_kw"]
+            demanda_max = demanda["fora_ponta_kw"] + perdas_demanda_fponta
             
             # logging.info(f"demanda contratada: {demanda_contratada}")
             # logging.info(f"demanda fora ponta: {demanda_max}")
@@ -185,8 +217,8 @@ def calcular_tarifa_verde(fatura_dados, tarifas, tarifa_ere, demanda_contratada 
                 Demanda = demanda_contratada
         else:
             maxima = demanda.get("maxima", [])
-            demanda_max_ponta = next((d["valor_kw"] for d in maxima if d.get("periodo") == "ponta"), 0.0)
-            demanda_max_fora_ponta = next((d["valor_kw"] for d in maxima if d.get("periodo") == "fora_ponta"), 0.0)
+            demanda_max_ponta = next((d["valor_kw"] for d in maxima if d.get("periodo") == "ponta"), 0.0) + perdas_demanda_ponta
+            demanda_max_fora_ponta = next((d["valor_kw"] for d in maxima if d.get("periodo") == "fora_ponta"), 0.0) + perdas_demanda_fponta
             demanda_max = max(demanda_max_ponta, demanda_max_fora_ponta)
             # logging.info(f"demanda contratada: {demanda_contratada}")
             # logging.info(f"demanda fora ponta: {demanda_max}")
@@ -351,6 +383,37 @@ def calcular_tarifa_azul(fatura_dados, tarifas, tarifa_ere, dm = None, pis=None,
     current_app.logger.debug(f"pis:{pis_aliq} cofins:{cofins_aliq} icms: {icms_aliq}")
 
     for dados in fatura_dados:
+        # perdas
+        perdas_consumo_ponta = sum(
+            c.get("valor_total", 0.0) or 0.0
+            for c in dados.get("perdas", [])
+            if "consumo ponta" in c.get("descricao", "").lower()
+        )
+
+        perdas_consumo_fponta = sum(
+            c.get("valor_total", 0.0) or 0.0
+            for c in dados.get("perdas", [])
+            if "consumo fponta" in c.get("descricao", "").lower()
+        )
+
+        perdas_demanda_ponta = sum(
+            c.get("valor_total", 0.0) or 0.0
+            for c in dados.get("perdas", [])
+            if "demanda ponta" in c.get("descricao", "").lower()
+        )
+
+        perdas_demanda_fponta = sum(
+            c.get("valor_total", 0.0) or 0.0
+            for c in dados.get("perdas", [])
+            if "demanda fponta" in c.get("descricao", "").lower()
+        )
+
+        perdas_ere = sum(
+            c.get("valor_total", 0.0) or 0.0
+            for c in dados.get("perdas", [])
+            if "ere" in c.get("descricao", "").lower()
+        )
+
         current_app.logger.debug(f"Mes: {dados['identificacao']['mes_referencia']}")
         consumo = dados["consumo_ativo"]
         demanda = dados["demanda"]
@@ -372,10 +435,10 @@ def calcular_tarifa_azul(fatura_dados, tarifas, tarifa_ere, dm = None, pis=None,
 
         current_app.logger.debug(f"tarifa_fp: {tusd_fp + te_fp}, tarifa_p: {tusd_p + te_p}")
 
-        energia_fp = consumo["fora_ponta_kwh"] * (tusd_fp + te_fp)
-        energia_p = consumo["ponta_kwh"] * (tusd_p + te_p)
+        energia_fp = (consumo["fora_ponta_kwh"] + perdas_consumo_fponta) * (tusd_fp + te_fp)
+        energia_p = (consumo["ponta_kwh"] + perdas_consumo_ponta) * (tusd_p + te_p)
         energia_compensada = energia_injetada * (tusd_fp + te_fp)
-        energia_reativa_ex = tarifa_ere * energia_reativa_ere["excedente"]["total_kwh"]
+        energia_reativa_ex = tarifa_ere * (energia_reativa_ere["excedente"]["total_kwh"] + perdas_ere)
         current_app.logger.debug(f"custo energia fp: {energia_fp}")
         current_app.logger.debug(f"custo energia p: {energia_p}")
         current_app.logger.debug(f"custo energia reativa excedente: {energia_reativa_ex}")
@@ -394,8 +457,8 @@ def calcular_tarifa_azul(fatura_dados, tarifas, tarifa_ere, dm = None, pis=None,
             demanda_p = demanda.get("contratada_p_kw", demanda.get("contratada_kw", 100))
 
         maxima = demanda.get("maxima", [])
-        demanda_max_ponta = next((d["valor_kw"] for d in maxima if d.get("periodo") == "ponta"), 0.0)
-        demanda_max_fora_ponta = next((d["valor_kw"] for d in maxima if d.get("periodo") == "fora_ponta"), 0.0)
+        demanda_max_ponta = next((d["valor_kw"] for d in maxima if d.get("periodo") == "ponta"), 0.0) + perdas_demanda_ponta
+        demanda_max_fora_ponta = next((d["valor_kw"] for d in maxima if d.get("periodo") == "fora_ponta"), 0.0) + perdas_demanda_fponta
 
         if demanda_max_fora_ponta > demanda_fp and demanda_max_fora_ponta/demanda_fp > 1.05:
             Ultrapassagem_fora_ponta = demanda_max_fora_ponta - demanda_fp

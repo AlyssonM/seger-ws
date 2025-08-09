@@ -57,3 +57,6 @@ GEMINI.md
 # Google drive credentials
 credentials.json
 token.json
+
+# Application cache
+cache/*
