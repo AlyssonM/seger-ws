@@ -59,4 +59,4 @@ credentials.json
 token.json
 
 # Application cache
-cache/*
+cache/faturas/

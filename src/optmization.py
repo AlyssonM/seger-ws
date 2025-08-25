@@ -48,7 +48,7 @@ def opt_tarifa_verde(dados, tarifas, tarifa_ere, down_bound, up_bound, pis=None,
     """
     resultado = minimize_scalar(
         lambda d: calcular_tarifa_verde(dados, tarifas, tarifa_ere, d, pis, cofins, icms)[0],
-        bounds=(30, up_bound),
+        bounds=(down_bound, up_bound),
         method='bounded'
     )
     demanda_otima = round(resultado.x)
@@ -114,7 +114,7 @@ def opt_tarifa_verde(dados, tarifas, tarifa_ere, down_bound, up_bound, pis=None,
     return result
 
 
-def opt_tarifa_azul(dados, tarifas, tarifa_ere, up_bound):
+def opt_tarifa_azul(dados, tarifas, tarifa_ere, up_bound, down_bound_p=None, down_bound_fp=None, up_bound_fp=None):
     """
     Realiza a otimização de custo para a modalidade de tarifa azul.
 
@@ -130,6 +130,10 @@ def opt_tarifa_azul(dados, tarifas, tarifa_ere, up_bound):
                  demandas de ponta e fora de ponta, etc.
         tarifa_ere: Informações específicas da tarifa de energia de referência,
                     se aplicável à otimização da tarifa azul.
+        up_bound: Limite superior para ambas as demandas (compatibilidade)
+        down_bound_p: Limite inferior para demanda ponta (opcional)
+        down_bound_fp: Limite inferior para demanda fora ponta (opcional)
+        up_bound_fp: Limite superior para demanda fora ponta (opcional)
 
     Returns:
         Um dicionário contendo os resultados da otimização para a tarifa azul,
@@ -138,10 +142,16 @@ def opt_tarifa_azul(dados, tarifas, tarifa_ere, up_bound):
         - 'configuracao_otima': Detalhes da configuração da tarifa azul que gerou o custo mínimo (ex: demanda contratada ótima).
         - Outras métricas relevantes da otimização.
     """
+    # Define bounds dinâmicos ou usa valores padrão
+    bound_p_min = down_bound_p if down_bound_p is not None else 30
+    bound_fp_min = down_bound_fp if down_bound_fp is not None else 30
+    bound_p_max = up_bound  # ponta sempre usa up_bound principal
+    bound_fp_max = up_bound_fp if up_bound_fp is not None else up_bound
+    
     resultado = minimize(
         lambda dm: calcular_tarifa_azul(dados, tarifas, tarifa_ere, dm)[0],
         x0=[100, 100],
-        bounds=[(30, up_bound), (30, up_bound)], 
+        bounds=[(bound_fp_min, bound_fp_max), (bound_p_min, bound_p_max)], 
         method='Powell'
     )
     demanda_p_otima = round(resultado.x[0])

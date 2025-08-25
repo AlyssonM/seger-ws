@@ -1,11 +1,11 @@
 {
   "codinstalacao": "0000144112",
-  "cache_created": "2025-08-08T04:00:56.892250",
-  "last_updated": "2025-08-08T04:00:56.892318",
-  "total_faturas_cached": 1,
+  "cache_created": "2025-08-15T13:49:58.327124",
+  "last_updated": "2025-08-15T13:50:01.881249",
+  "total_faturas_cached": 41,
   "data_range": {
-    "inicio": "2024-09",
-    "fim": "2024-09"
+    "inicio": "2022-01",
+    "fim": "2025-05"
   },
   "cache_version": "1.0"
 }

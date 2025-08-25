@@ -15,6 +15,7 @@ export class SegerToolsController {
     this.registerBaixarFaturasTool();
     this.registerDadosFaturaTool();
     this.registerDadosConsolidadosTool();
+    this.registerObterDadosFaturasTool();
     this.registerStartAnalysisTool();
   }
 
@@ -71,7 +72,7 @@ export class SegerToolsController {
   private registerDadosConsolidadosTool(): void {
     this.server.tool(
       "dados-consolidados",
-      "Obtém dados consolidados de faturas de uma instalação para um período específico",
+      "Obtém dados consolidados de faturas de uma instalação incluindo custos detalhados (energia, demanda, iluminação pública, bandeiras, impostos). Use esta ferramenta para responder perguntas sobre custos específicos nas faturas.",
       {
         codInstalacao: z.string()
           .describe("Código da instalação (ex: '0000144112')"),
@@ -120,6 +121,88 @@ export class SegerToolsController {
                       `Verifique se:\n` +
                       `- A instalação existe: ${codInstalacao}\n` +
                       `- O período é válido: ${data_inicio} a ${data_fim}\n` +
+                      `- Existem faturas para o período solicitado\n` +
+                      `- O backend está respondendo corretamente`
+              }
+            ]
+          };
+        }
+      }
+    );
+  }
+
+  private registerObterDadosFaturasTool(): void {
+    this.server.tool(
+      "obter_dados_faturas",
+      "Obtém dados detalhados das faturas incluindo TODOS os custos: energia, demanda, iluminação pública, bandeiras tarifárias, impostos PIS/COFINS/ICMS. Ideal para responder perguntas sobre custos específicos de qualquer componente da fatura.",
+      {
+        codInstalacao: z.string()
+          .describe("Código da instalação (ex: '0000144112' ou '148559')"),
+        data_inicio: z.string()
+          .describe("Data início no formato MES-ANO (ex: 'JAN-2024')"),
+        data_fim: z.string()
+          .describe("Data fim no formato MES-ANO (ex: 'JAN-2024' para um mês específico)"),
+        distribuidora: z.string().optional()
+          .describe("Distribuidora (padrão: 'EDP ES')"),
+      },
+      async ({ codInstalacao, data_inicio, data_fim, distribuidora = "EDP ES" }) => {
+        try {
+          console.error(`[MCP] Obtendo dados das faturas para instalação: ${codInstalacao}`);
+          console.error(`[MCP] Período: ${data_inicio} até ${data_fim}`);
+
+          const dados = await this.segerService.getFaturasJson({
+            codInstalacao,
+            data_inicio,
+            data_fim,
+            distribuidora,
+            via_regex: true
+          });
+
+          // Extrai informação específica de iluminação pública para facilitar o acesso
+          const iluminacaoPublica = dados.dados?.map((fatura: any) => {
+            const ilum = fatura.dados?.componentes_extras?.find((comp: any) => 
+              comp.descricao?.toLowerCase().includes('ilum')
+            );
+            return {
+              mes: fatura.referencia,
+              iluminacao_publica: ilum ? {
+                descricao: ilum.descricao,
+                valor: ilum.valor_total
+              } : null
+            };
+          }).filter((item: any) => item.iluminacao_publica);
+
+          return {
+            content: [
+              {
+                type: "text",
+                text: `📊 **Dados Detalhados das Faturas da Instalação ${codInstalacao}**\n` +
+                      `**Período:** ${data_inicio} a ${data_fim}\n` +
+                      `**Total de faturas:** ${dados.total_faturas || 0}\n\n` +
+                      
+                      `🏛️ **Iluminação Pública encontrada:**\n` +
+                      (iluminacaoPublica?.length > 0 ? 
+                        iluminacaoPublica.map((item: any) => 
+                          `- ${item.mes}: ${item.iluminacao_publica.descricao} = R$ ${item.iluminacao_publica.valor.toFixed(2)}`
+                        ).join('\n') :
+                        'Nenhum custo de iluminação pública encontrado'
+                      ) + '\n\n' +
+                      
+                      `📋 **Dados Completos:**\n\`\`\`json\n${JSON.stringify(dados, null, 2)}\n\`\`\``
+              }
+            ]
+          };
+        } catch (error) {
+          console.error(`[MCP] Erro ao obter dados das faturas:`, error);
+          return {
+            content: [
+              {
+                type: "text",
+                text: `❌ **Erro ao obter dados das faturas da instalação ${codInstalacao}:**\n\n` +
+                      `\`${error instanceof Error ? error.message : 'Erro desconhecido'}\`\n\n` +
+                      `**Verifique se:**\n` +
+                      `- A instalação existe: \`${codInstalacao}\`\n` +
+                      `- O período é válido: \`${data_inicio}\` a \`${data_fim}\`\n` +
                       `- Existem faturas para o período solicitado\n` +
                       `- O backend está respondendo corretamente`
               }

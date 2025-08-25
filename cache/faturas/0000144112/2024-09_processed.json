@@ -1,9 +1,9 @@
 {
   "file_info": {
     "filename": "fatura_SET-2024.pdf",
-    "file_path": "/home/user/studio/seger-ws/faturas_edp/0000144112/fatura_SET-2024.pdf",
+    "file_path": "faturas_edp/0000144112/fatura_SET-2024.pdf",
     "file_hash": "sha256:db18b5e348f7add3c55b1570222b5778f18b1ffa5c89e78b6f0a99a412fe02e1",
-    "processed_at": "2025-08-08T04:00:56.889526",
+    "processed_at": "2025-08-15T13:49:58.326361",
     "parser_version": "v2.0"
   },
   "extracted_data": {
@@ -149,7 +149,7 @@
     }
   },
   "processing_stats": {
-    "processing_time_seconds": 0.142378,
+    "processing_time_seconds": 0.117105,
     "method_used": "regex",
     "parser_version": "v2.0"
   }

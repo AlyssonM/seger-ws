@@ -634,6 +634,13 @@ def calcular_tarifa_bt(fatura_dados, tarifas):
 
         energia_total = energia_fp + energia_p
         
+        # Para tarifa BT convencional, normalmente não há energia compensada (geração distribuída)
+        energia_injetada = consumo.get("energia_injetada_kwh", 0.0) or 0.0
+        energia_compensada = energia_injetada * (tusd + te)
+        
+        # Para BT, energia reativa excedente é zero (não se aplica)
+        energia_reativa_ex = 0.0
+        
         # Para tarifa BT não há cobrança de demanda
         demanda_total = 0.0
     
@@ -674,6 +681,14 @@ def calcular_tarifa_bt(fatura_dados, tarifas):
         ]
 
         total_sem_imposto = energia_total + bandeira_liquido
+        
+        # Calcula PIS e COFINS para BT
+        total_pis = (total_sem_imposto / (1 - (pis_aliq + cofins_aliq) / 100)) * pis_aliq / 100
+        total_cofins = (total_sem_imposto / (1 - (pis_aliq + cofins_aliq) / 100)) * cofins_aliq / 100
+        total_pis_cofins = total_pis + total_cofins
+        
+        # Para BT, ICMS geralmente é zero ou mínimo
+        total_ICMS = 0.0
         # fatura_total += total_sem_imposto/(1 - (pis_aliq + cofins_aliq)/100) + iluminacao
 
         fatura_mes = (total_sem_imposto / (1 - (pis_aliq + cofins_aliq) / 100)

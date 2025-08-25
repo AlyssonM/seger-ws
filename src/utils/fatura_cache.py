@@ -446,6 +446,86 @@ class FaturaCache:
         except Exception as e:
             logging.error(f"Erro ao obter estatísticas do cache: {str(e)}")
             return {"error": str(e)}
+    
+    def save_excel_data(self, codinstalacao: str, periodo: str, extracted_data: Dict[str, Any]) -> bool:
+        """
+        Salva dados extraídos do Excel no cache.
+        
+        Args:
+            codinstalacao: Código da instalação
+            periodo: Período no formato YYYY-MM
+            extracted_data: Dados extraídos da planilha Excel
+            
+        Returns:
+            bool: True se salvou com sucesso
+        """
+        try:
+            # Prepara dados do cache específicos para Excel
+            cache_data = {
+                "file_info": {
+                    "filename": f"planilha_{periodo.replace('-', '_')}.xlsx",
+                    "file_path": f"excel_data/{codinstalacao}/{periodo}",
+                    "file_hash": f"excel_{periodo}_{codinstalacao}",
+                    "processed_at": datetime.now().isoformat(),
+                    "parser_version": "v2.0_excel",
+                    "source": "excel_spreadsheet"
+                },
+                "extracted_data": extracted_data,
+                "processing_stats": {
+                    "source": "excel_fallback",
+                    "processing_time": 0.1,
+                    "success": True
+                }
+            }
+            
+            # Salva no cache
+            cache_file_path = self._get_cache_file_path(codinstalacao, periodo)
+            os.makedirs(os.path.dirname(cache_file_path), exist_ok=True)
+            
+            with open(cache_file_path, 'w', encoding='utf-8') as f:
+                json.dump(cache_data, f, ensure_ascii=False, indent=2)
+            
+            # Atualiza metadata
+            self._update_metadata(codinstalacao, periodo, cache_data["file_info"])
+            
+            logging.info(f"Dados do Excel salvos no cache: {cache_file_path}")
+            return True
+            
+        except Exception as e:
+            logging.error(f"Erro ao salvar dados do Excel no cache: {str(e)}")
+            return False
+    
+    def _update_metadata(self, codinstalacao: str, periodo: str, file_info: Dict[str, Any]) -> None:
+        """Atualiza metadata da instalação com novo período."""
+        try:
+            metadata_file = os.path.join(self._get_installation_cache_dir(codinstalacao), "metadata.json")
+            
+            # Carrega metadata existente ou cria novo
+            metadata = {}
+            if os.path.exists(metadata_file):
+                with open(metadata_file, 'r', encoding='utf-8') as f:
+                    metadata = json.load(f)
+            
+            # Atualiza com novo período
+            if "files" not in metadata:
+                metadata["files"] = {}
+                
+            metadata["files"][periodo] = {
+                "filename": file_info["filename"],
+                "processed_at": file_info["processed_at"],
+                "source": file_info.get("source", "excel_spreadsheet")
+            }
+            
+            metadata["last_updated"] = datetime.now().isoformat()
+            metadata["total_cached_periods"] = len(metadata["files"])
+            
+            # Salva metadata atualizada
+            os.makedirs(os.path.dirname(metadata_file), exist_ok=True)
+            with open(metadata_file, 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, ensure_ascii=False, indent=2)
+                
+        except Exception as e:
+            logging.error(f"Erro ao atualizar metadata para {codinstalacao}: {str(e)}")
 
 
 # Instância global do cache

@@ -194,6 +194,16 @@ class AnalisadorTarifario:
                     return ModalidadeTarifaria.VERDE
                     
             elif modalidade_extraida in ["convencional", "branca"]:
+                # Para convencional, calcula demanda otimizada baseada no histórico
+                demanda_maxima_historica = max(self.demanda_maxima["ponta"], self.demanda_maxima["fora_ponta"])
+                if demanda_maxima_historica > 0:
+                    # Adiciona margem de segurança de 5% à demanda máxima registrada
+                    demanda_otimizada = demanda_maxima_historica * 1.05
+                    self.parametros_atuais = {
+                        "demanda_contratada": round(demanda_otimizada, 0)
+                    }
+                    _log_info(f"Modalidade Convencional extraída - demanda otimizada estimada: {round(demanda_otimizada, 0)}kW (baseada em máxima histórica: {demanda_maxima_historica:.2f}kW)")
+                
                 return ModalidadeTarifaria.CONVENCIONAL
         
         # 2. Se não detectou pela modalidade extraída, usa estrutura de demanda
@@ -205,6 +215,32 @@ class AnalisadorTarifario:
         
         # Se não há nenhuma demanda contratada = BT (Convencional)
         if demanda_fp <= 0 and demanda_p <= 0 and demanda_geral <= 0:
+            # Verifica se a instalação pode realmente ser BT Convencional
+            demanda_maxima_historica = max(self.demanda_maxima["ponta"], self.demanda_maxima["fora_ponta"])
+            consumo_anual = self.consumo_total["total"]
+            
+            # Limites para BT Convencional
+            LIMITE_DEMANDA_BT = 75.0  # kW
+            LIMITE_CONSUMO_BT = 300000.0  # kWh/ano
+            
+            if demanda_maxima_historica > LIMITE_DEMANDA_BT or consumo_anual > LIMITE_CONSUMO_BT:
+                _log_info(f"Instalação com perfil de Grupo A detectada (Demanda: {demanda_maxima_historica:.1f}kW, Consumo: {consumo_anual:.0f}kWh/ano) - assumindo modalidade Verde")
+                # Assume modalidade Verde para instalações grandes sem demanda contratada explícita
+                demanda_estimada = demanda_maxima_historica * 1.05
+                self.parametros_atuais = {
+                    "demanda_contratada": round(demanda_estimada, 0)
+                }
+                return ModalidadeTarifaria.VERDE
+            
+            # Para convencional, calcula demanda otimizada baseada no histórico
+            if demanda_maxima_historica > 0:
+                # Adiciona margem de segurança de 5% à demanda máxima registrada
+                demanda_otimizada = demanda_maxima_historica * 1.05
+                self.parametros_atuais = {
+                    "demanda_contratada": round(demanda_otimizada, 0)
+                }
+                _log_info(f"Modalidade Convencional - demanda otimizada estimada: {round(demanda_otimizada, 0)}kW (baseada em máxima histórica: {demanda_maxima_historica:.2f}kW)")
+            
             return ModalidadeTarifaria.CONVENCIONAL
             
         # Se há demanda separada ponta/fora ponta = Azul
@@ -256,13 +292,26 @@ class AnalisadorTarifario:
                 self.pis, self.cofins, self.icms
             )
             
-            # Otimização
+            # Calcula bounds dinâmicos baseados na demanda atual e histórico
+            demanda_maxima_historica = max(self.demanda_maxima["ponta"], self.demanda_maxima["fora_ponta"])
+            
+            # Down bound: maior entre 30kW e 50% da demanda atual (para não ir muito baixo)
+            down_bound = max(30, int(demanda_atual * 0.5))
+            
+            # Up bound: 200% da demanda atual ou 150% se a demanda já for bem otimizada
+            # Se a demanda atual está próxima da máxima histórica, usa range menor
+            if demanda_atual <= demanda_maxima_historica * 1.1:
+                up_bound = int(demanda_atual * 2.0)  # 200% se bem ajustada
+            else:
+                up_bound = int(demanda_atual * 1.5)  # 150% se já está alta
+            
+            # Otimização com bounds dinâmicos
             resultado_opt = opt_tarifa_verde(
                 self.fatura_dados,
                 self.tarifas["verde"],
                 self.tarifa_ere,
-                30,  # down_bound
-                1000,  # up_bound  
+                down_bound,
+                up_bound,
                 self.pis, self.cofins, self.icms
             )
             
@@ -332,12 +381,30 @@ class AnalisadorTarifario:
                 self.pis, self.cofins, self.icms
             )
             
-            # Otimização
+            # Calcula bounds dinâmicos para Azul baseados nas demandas atuais e histórico
+            demanda_maxima_historica = max(self.demanda_maxima["ponta"], self.demanda_maxima["fora_ponta"])
+            
+            # Down bounds: maior entre 30kW e 50% das demandas atuais
+            down_bound_p = max(30, int(demanda_p_atual * 0.5))
+            down_bound_fp = max(30, int(demanda_fp_atual * 0.5))
+            
+            # Up bounds: 200% das demandas atuais ou 150% se já bem otimizadas
+            # Considera a demanda máxima histórica para ajustar o range
+            max_demanda_atual = max(demanda_p_atual, demanda_fp_atual)
+            if max_demanda_atual <= demanda_maxima_historica * 1.1:
+                up_bound_p = int(demanda_p_atual * 2.0)
+                up_bound_fp = int(demanda_fp_atual * 2.0)
+            else:
+                up_bound_p = int(demanda_p_atual * 1.5)
+                up_bound_fp = int(demanda_fp_atual * 1.5)
+            
+            # Otimização com bounds dinâmicos
             resultado_opt = opt_tarifa_azul(
                 self.fatura_dados,
                 self.tarifas["azul"],
                 self.tarifa_ere,
-                1000  # up_bound
+                up_bound_p,  # mantem compatibilidade por enquanto
+                down_bound_p, down_bound_fp, up_bound_fp  # parâmetros adicionais
             )
             
             demanda_p_otima = resultado_opt["demanda_p_otima"]
@@ -379,6 +446,76 @@ class AnalisadorTarifario:
                 observacoes=[f"Erro no cálculo: {str(e)}"]
             )
     
+    def otimizar_modalidade_convencional(self) -> ResultadoOtimizacao:
+        """Calcula custo atual para modalidade Convencional (BT)"""
+        _log_info("Calculando custo para modalidade Convencional...")
+        
+        if "convencional" not in self.tarifas:
+            return ResultadoOtimizacao(
+                modalidade=ModalidadeTarifaria.CONVENCIONAL,
+                custo_atual=0.0,
+                custo_otimizado=0.0,
+                economia_anual=0.0,
+                economia_percentual=0.0,
+                demanda_otima={},
+                viavel=False,
+                observacoes=["Tarifas Convencionais não disponíveis"]
+            )
+        
+        # Verifica se a instalação é realmente elegível para BT Convencional
+        # Critérios: demanda <= 75kW e consumo anual <= 300.000 kWh (aproximadamente)
+        demanda_maxima_registrada = max(self.demanda_maxima["ponta"], self.demanda_maxima["fora_ponta"])
+        consumo_anual = self.consumo_total["total"]
+        
+        # Limites típicos para BT no Brasil
+        LIMITE_DEMANDA_BT = 75.0  # kW
+        LIMITE_CONSUMO_BT = 300000.0  # kWh/ano
+        
+        if demanda_maxima_registrada > LIMITE_DEMANDA_BT or consumo_anual > LIMITE_CONSUMO_BT:
+            _log_info(f"Instalação não elegível para BT Convencional - Demanda: {demanda_maxima_registrada:.1f}kW (limite: {LIMITE_DEMANDA_BT}kW), Consumo: {consumo_anual:.0f}kWh/ano (limite: {LIMITE_CONSUMO_BT:.0f}kWh/ano)")
+            return ResultadoOtimizacao(
+                modalidade=ModalidadeTarifaria.CONVENCIONAL,
+                custo_atual=0.0,
+                custo_otimizado=0.0,
+                economia_anual=0.0,
+                economia_percentual=0.0,
+                demanda_otima={},
+                viavel=False,
+                observacoes=[f"Instalação não elegível para BT Convencional - Demanda máxima: {demanda_maxima_registrada:.1f}kW > {LIMITE_DEMANDA_BT}kW ou Consumo: {consumo_anual:.0f}kWh/ano > {LIMITE_CONSUMO_BT:.0f}kWh/ano"]
+            )
+        
+        try:
+            # Para BT convencional, apenas calcula o custo (não há otimização de demanda)
+            custo_atual, detalhes = calcular_tarifa_bt(
+                self.fatura_dados,
+                self.tarifas["convencional"]
+            )
+            
+            # Para convencional, custo atual = custo otimizado (sem otimização)
+            return ResultadoOtimizacao(
+                modalidade=ModalidadeTarifaria.CONVENCIONAL,
+                custo_atual=custo_atual,
+                custo_otimizado=custo_atual,  # Sem otimização para BT
+                economia_anual=0.0,  # Não há economia interna
+                economia_percentual=0.0,
+                demanda_otima={},  # BT não tem demanda contratada
+                viavel=True,  # Sempre é uma opção válida
+                observacoes=["Modalidade atual - sem otimização de demanda"]
+            )
+            
+        except Exception as e:
+            _log_error(f"Erro no cálculo Convencional: {e}")
+            return ResultadoOtimizacao(
+                modalidade=ModalidadeTarifaria.CONVENCIONAL,
+                custo_atual=0.0,
+                custo_otimizado=0.0,
+                economia_anual=0.0,
+                economia_percentual=0.0,
+                demanda_otima={},
+                viavel=False,
+                observacoes=[f"Erro no cálculo: {str(e)}"]
+            )
+    
     def analisar_completo(self) -> AnaliseCompleta:
         """
         Executa análise tarifária completa
@@ -401,6 +538,10 @@ class AnalisadorTarifario:
         # Azul
         resultado_azul = self.otimizar_modalidade_azul()
         resultados.append(resultado_azul)
+        
+        # Convencional
+        resultado_convencional = self.otimizar_modalidade_convencional()
+        resultados.append(resultado_convencional)
         
         # Encontra melhor opção baseada no menor custo global
         resultados_viaveis = [r for r in resultados if r.viavel]
@@ -571,6 +712,21 @@ class AnalisadorTarifario:
                     else:
                         valor_calculado = custo_total / len(self.fatura_dados)
                         
+                elif self.modalidade_atual == ModalidadeTarifaria.CONVENCIONAL and "convencional" in self.tarifas:
+                    # Calcula apenas para esta fatura específica usando tarifa BT
+                    custo_total, detalhes = calcular_tarifa_bt(
+                        [fatura],  # Apenas esta fatura
+                        self.tarifas["convencional"]
+                    )
+                    
+                    # Se retornou detalhes mensais, pega o valor desta fatura
+                    if detalhes and len(detalhes) > 0:
+                        valor_calculado = detalhes[0].get("valor_fatura", custo_total)
+                    else:
+                        valor_calculado = custo_total / len(self.fatura_dados)
+                        
+                    _log_info(f"Modalidade convencional - valor calculado: R$ {valor_calculado:.2f}")
+                        
                 else:
                     # Se modalidade desconhecida ou tarifas não disponíveis, tenta estimar
                     _log_info(f"Modalidade {self.modalidade_atual.value} - usando estimativa básica")
@@ -644,8 +800,13 @@ def analisar_tarifas_completo(fatura_dados: List[Dict[str, Any]],
     # Converte para dict para serialização JSON, garantindo compatibilidade
     def to_json_safe(obj):
         """Converte valores para serem JSON-serializáveis"""
+        import math
         if isinstance(obj, bool):
             return obj  # bool é JSON-serializável
+        elif isinstance(obj, float):
+            if math.isinf(obj) or math.isnan(obj):
+                return None  # Converte inf/nan para null
+            return obj
         elif hasattr(obj, 'value'):  # Enum
             return obj.value
         return obj
@@ -680,7 +841,15 @@ def analisar_tarifas_completo(fatura_dados: List[Dict[str, Any]],
         "recomendacoes": resultado.recomendacoes,
         "dados_mensais": resultado.dados_mensais,
         "resumo_executivo": {
-            **resultado.resumo_executivo,
-            "mudanca_necessaria": bool(resultado.melhor_opcao.modalidade != resultado.modalidade_atual)
+            "modalidade_atual": resultado.resumo_executivo["modalidade_atual"],
+            "modalidade_recomendada": resultado.resumo_executivo["modalidade_recomendada"], 
+            "mudanca_necessaria": bool(resultado.melhor_opcao.modalidade != resultado.modalidade_atual),
+            "economia_anual_maxima": to_json_safe(resultado.resumo_executivo["economia_anual_maxima"]),
+            "economia_percentual_maxima": to_json_safe(resultado.resumo_executivo["economia_percentual_maxima"]),
+            "payback_meses": to_json_safe(resultado.resumo_executivo["payback_meses"]),
+            "consumo_total_kwh": to_json_safe(resultado.resumo_executivo["consumo_total_kwh"]),
+            "demanda_maxima_kw": to_json_safe(resultado.resumo_executivo["demanda_maxima_kw"]),
+            "periodo_analisado": resultado.resumo_executivo["periodo_analisado"],
+            "viabilidade": resultado.resumo_executivo["viabilidade"]
         }
     }

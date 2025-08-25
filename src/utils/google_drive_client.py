@@ -253,6 +253,45 @@ class GoogleDriveClient:
                 return match.group(1)
         
         return None
+    
+    def search_and_download_excel_file(self, filename: str = "Consumo_Governo_ES_EDP_21-25_Calculos.xlsx", download_path: str = None) -> Optional[str]:
+        """
+        Busca e baixa arquivo Excel do Google Drive
+        
+        Args:
+            filename: Nome do arquivo Excel
+            download_path: Pasta onde baixar o arquivo (padrão: temp)
+            
+        Returns:
+            Caminho completo do arquivo baixado ou None se não encontrado
+        """
+        if not self.is_available():
+            return None
+        
+        try:
+            # Busca o arquivo Excel no Drive
+            query = f"name='{filename}' and mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'"
+            results = self.service.files().list(q=query).execute()
+            files = results.get('files', [])
+            
+            if not files:
+                logging.warning(f"Arquivo Excel '{filename}' não encontrado no Google Drive")
+                return None
+            
+            file_id = files[0]['id']
+            logging.info(f"Arquivo Excel '{filename}' encontrado no Google Drive")
+            
+            # Define pasta de download
+            if download_path is None:
+                download_path = tempfile.gettempdir()
+            
+            # Baixa o arquivo
+            downloaded_path = self.download_file(file_id, filename, download_path)
+            return downloaded_path
+            
+        except Exception as e:
+            logging.error(f"Erro ao buscar/baixar arquivo Excel '{filename}': {str(e)}")
+            return None
 
 
 def create_google_drive_client() -> GoogleDriveClient:

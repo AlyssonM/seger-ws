@@ -228,6 +228,54 @@ def buscar_arquivos_fatura_com_fallback(codinstalacao: str, data_inicio: str = N
         return arquivos_info
 
 
+def buscar_arquivos_fatura_local_only(codinstalacao: str, data_inicio: str = None, data_fim: str = None):
+    """
+    Busca arquivos de faturas APENAS localmente (sem Google Drive)
+    
+    Returns:
+        Lista de dicionários com informações dos arquivos locais
+    """
+    try:
+        # Busca tradicional por arquivos locais
+        import glob
+        pasta_instalacao = os.path.join("faturas_edp", codinstalacao)
+        padrao_arquivos = os.path.join(pasta_instalacao, "*.pdf")
+        arquivos_pdf = glob.glob(padrao_arquivos)
+        
+        dt_ini, dt_fim = None, None
+        if data_inicio and data_fim:
+            dt_ini = ref_to_date(data_inicio)
+            dt_fim = ref_to_date(data_fim)
+            if dt_ini > dt_fim:
+                dt_ini, dt_fim = dt_fim, dt_ini
+        
+        arquivos_info = []
+        for arquivo in arquivos_pdf:
+            nome_arquivo = os.path.basename(arquivo)
+            ref = None
+            if "_" in nome_arquivo:
+                ref = nome_arquivo.split("_")[-1].replace(".pdf", "")
+                if dt_ini and dt_fim:
+                    ref_dt = ref_to_date(ref)
+                    if not (dt_ini <= ref_dt <= dt_fim):
+                        continue
+            
+            arquivos_info.append({
+                'arquivo': nome_arquivo,
+                'caminho_completo': arquivo,
+                'referencia': ref,
+                'fonte': 'local',
+                'drive_file_id': None
+            })
+        
+        current_app.logger.info(f"Arquivos locais encontrados: {len(arquivos_info)}")
+        return arquivos_info
+        
+    except Exception as e:
+        current_app.logger.error(f"Erro na busca local: {str(e)}")
+        return []
+
+
 def obter_caminho_arquivo_fatura(arquivo_info):
     """
     Obtém caminho do arquivo de fatura, baixando do Google Drive se necessário
@@ -265,13 +313,30 @@ def processar_faturas_cache_first(codinstalacao: str, data_inicio: str, data_fim
         dt_inicio = ref_to_date(data_inicio)
         dt_fim = ref_to_date(data_fim)
         
-        # Gera lista de meses no período
+        # Gera lista de meses no período usando conversão fatura→consumo
         meses_periodo = []
         current_date = dt_inicio.replace(day=1)
         while current_date <= dt_fim:
             mes_ref = current_date.strftime("%m/%Y")  # Para logging
-            mes_ref_cache = current_date.strftime("%Y-%m")  # Para cache (formato YYYY-MM)
+            
+            # Converte período de fatura para período de consumo (para cache lookup)
+            meses_map_rev = {
+                1: "JAN", 2: "FEV", 3: "MAR", 4: "ABR", 5: "MAI", 6: "JUN",
+                7: "JUL", 8: "AGO", 9: "SET", 10: "OUT", 11: "NOV", 12: "DEZ"
+            }
+            mes_fatura = f"{meses_map_rev[current_date.month]}-{current_date.year}"
+            
+            # Converte para período de consumo (JAN-2025 → DEZ-2024)
+            if current_date.month == 1:  # Janeiro
+                ano_consumo = current_date.year - 1
+                mes_consumo = 12
+            else:
+                ano_consumo = current_date.year
+                mes_consumo = current_date.month
+                
+            mes_ref_cache = f"{ano_consumo}-{mes_consumo:02d}"  # Para cache (formato YYYY-MM)
             meses_periodo.append((mes_ref, mes_ref_cache))
+            
             # Próximo mês
             if current_date.month == 12:
                 current_date = current_date.replace(year=current_date.year + 1, month=1)
@@ -300,7 +365,14 @@ def processar_faturas_cache_first(codinstalacao: str, data_inicio: str, data_fim
             current_app.logger.warning(f"Erro ao carregar cache para {mes_ref}: {str(e)}")
     
     # Se temos dados suficientes do cache, retorna
-    if len(dados_faturas) >= len(meses_periodo) * 0.8:  # 80% dos dados disponíveis no cache
+    porcentagem = len(dados_faturas)/len(meses_periodo)*100 if len(meses_periodo) > 0 else 0
+    current_app.logger.info(f"Cache check: {len(dados_faturas)} disponíveis de {len(meses_periodo)} solicitados ({porcentagem:.1f}%)")
+    
+    # Critério mais flexível: se temos pelo menos 50% ou pelo menos 3 meses
+    criterio_percentual = len(dados_faturas) >= len(meses_periodo) * 0.5
+    criterio_minimo = len(dados_faturas) >= min(3, len(meses_periodo))
+    
+    if criterio_percentual or criterio_minimo:
         current_app.logger.info(f"Usando dados do cache para {codinstalacao}: {dados_do_cache} meses")
         return dados_faturas, {
             "total_arquivos_encontrados": len(dados_faturas),
@@ -322,10 +394,111 @@ def processar_faturas_com_fallback(codinstalacao: str, data_inicio: str, data_fi
     Returns:
         tuple: (dados_faturas, info_processamento)
     """
-    arquivos_info = buscar_arquivos_fatura_com_fallback(codinstalacao, data_inicio, data_fim)
+    # Primeiro tenta PDFs locais (rápido)
+    arquivos_info = buscar_arquivos_fatura_local_only(codinstalacao, data_inicio, data_fim)
     
+    # Se não encontrou PDFs locais, tenta Excel como segundo fallback (rápido)
     if not arquivos_info:
-        return [], {"error": f"Nenhuma fatura encontrada para instalação {codinstalacao}"}
+        current_app.logger.info(f"Nenhum PDF encontrado para {codinstalacao}, tentando fallback do CSV")
+        try:
+            from src.utils.csv_parser import parse_csv_invoices
+            from src.utils.fatura_cache import FaturaCache
+            dados_excel = parse_csv_invoices(codinstalacao, data_inicio, data_fim)
+            
+            if dados_excel:
+                current_app.logger.info(f"✅ Dados do CSV carregados para {codinstalacao}: {len(dados_excel)} faturas")
+                
+                # Salva dados do CSV no cache para uso futuro
+                try:
+                    cache_manager = FaturaCache()
+                    dados_salvos_cache = 0
+                    
+                    for fatura_data in dados_excel:
+                        # Usa periodo_consumo se disponível, senão fallback para referencia
+                        periodo_consumo = fatura_data.get('periodo_consumo', '')
+                        referencia = fatura_data.get('referencia', '')
+                        
+                        if periodo_consumo:
+                            # AnoMês formato: 202412 → cache_key: 2024-12
+                            try:
+                                ano = periodo_consumo[:4]
+                                mes = periodo_consumo[4:]
+                                cache_key = f"{ano}-{mes}"
+                                
+                                # Salva no cache apenas se não existir
+                                if not cache_manager.is_cache_valid_by_period(codinstalacao, cache_key):
+                                    cache_manager.save_excel_data(codinstalacao, cache_key, fatura_data)
+                                    dados_salvos_cache += 1
+                                    current_app.logger.info(f"Cache criado para {codinstalacao} - {cache_key}")
+                                else:
+                                    current_app.logger.info(f"Cache já existe para {codinstalacao} - {cache_key}")
+                                
+                            except (ValueError, IndexError) as e:
+                                current_app.logger.warning(f"Erro ao criar cache para período {periodo_consumo}: {str(e)}")
+                        
+                        elif referencia:
+                            # Fallback: usa referência da fatura (comportamento anterior)
+                            try:
+                                meses_map = {
+                                    'JAN': 1, 'FEV': 2, 'MAR': 3, 'ABR': 4, 'MAI': 5, 'JUN': 6,
+                                    'JUL': 7, 'AGO': 8, 'SET': 9, 'OUT': 10, 'NOV': 11, 'DEZ': 12
+                                }
+                                mes_nome, ano = referencia.split('/')
+                                mes_num = meses_map.get(mes_nome, 1)
+                                cache_key = f"{ano}-{mes_num:02d}"
+                                
+                                # Salva no cache apenas se não existir
+                                if not cache_manager.is_cache_valid_by_period(codinstalacao, cache_key):
+                                    cache_manager.save_excel_data(codinstalacao, cache_key, fatura_data)
+                                    dados_salvos_cache += 1
+                                    current_app.logger.info(f"Cache criado para {codinstalacao} - {cache_key}")
+                                else:
+                                    current_app.logger.info(f"Cache já existe para {codinstalacao} - {cache_key}")
+                                
+                            except (ValueError, KeyError) as e:
+                                current_app.logger.warning(f"Erro ao criar cache para {referencia}: {str(e)}")
+                    
+                    if dados_salvos_cache > 0:
+                        current_app.logger.info(f"✅ {dados_salvos_cache} dados do CSV salvos no cache para {codinstalacao}")
+                        
+                except Exception as e:
+                    current_app.logger.error(f"Erro ao salvar dados do CSV no cache: {str(e)}")
+                
+                return dados_excel, {
+                    "total_arquivos_encontrados": len(dados_excel),
+                    "arquivos_processados": len(dados_excel),
+                    "arquivos_com_erro": 0,
+                    "fonte_dados": "csv_spreadsheet",
+                    "dados_do_cache": 0,
+                    "dados_extraidos": len(dados_excel)
+                }
+            else:
+                current_app.logger.warning(f"Nenhum dado encontrado no CSV para {codinstalacao}")
+                # Se CSV não encontrou dados, tenta Google Drive como último recurso
+                current_app.logger.info(f"CSV vazio para {codinstalacao}, tentando Google Drive como último recurso...")
+                pass  # Continua para tentar Google Drive fora do try/except
+                
+        except Exception as e:
+            current_app.logger.error(f"Erro ao processar dados do CSV para {codinstalacao}: {str(e)}")
+            # Apenas em caso de ERRO (não dados vazios), tenta Google Drive como último recurso
+            current_app.logger.info(f"Erro no CSV para {codinstalacao}, tentando Google Drive como último recurso...")
+            arquivos_info = buscar_arquivos_fatura_com_fallback(codinstalacao, data_inicio, data_fim)
+            
+            if not arquivos_info:
+                return [], {"error": f"Nenhuma fatura encontrada para instalação {codinstalacao}"}
+    
+    # Se chegou até aqui e arquivos_info ainda está vazio (CSV não encontrou dados),
+    # tenta Google Drive como último recurso
+    if not arquivos_info:
+        current_app.logger.info(f"Tentando Google Drive como último recurso para {codinstalacao}...")
+        arquivos_info = buscar_arquivos_fatura_com_fallback(codinstalacao, data_inicio, data_fim)
+        
+        if not arquivos_info:
+            return [], {
+                "error": f"Nenhuma fatura encontrada para instalação {codinstalacao} no período {data_inicio} a {data_fim}",
+                "periodo_solicitado": f"{data_inicio} a {data_fim}",
+                "fonte_verificada": "csv_spreadsheet_e_google_drive"
+            }
     
     dados_faturas = []
     arquivos_processados = 0
@@ -457,7 +630,7 @@ class FaturasJson(Resource):
         data_fim = data.get("data_fim")
         codinstalacao = data.get("codInstalacao")
 
-        current_app.logger.info(f'Solicitação para dados json de faturas da instalação: {codinstalacao}')
+        current_app.logger.info(f'Solicitação para dados json de faturas da instalação: {codinstalacao} (período: {data_inicio} a {data_fim})')
         if not all([data_inicio, data_fim, codinstalacao]):
             return {"error": "Parâmetros obrigatórios: data_inicio, data_fim, CodInstalacao"}, 400
 
